@@ -1,0 +1,2395 @@
+<!DOCTYPE html>
+<html lang="pt-MZ">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#B9AD9C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="RENW">
+<meta name="mobile-web-app-capable" content="yes">
+<title>RNW Skin Renewal — Gestão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<!-- Firebase (usado apenas se FIREBASE_CONFIG estiver preenchido mais abaixo; se falhar a carregar por falta de rede, a app continua a funcionar 100% offline com armazenamento local) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --wall:#B9AD9C;
+  --wall-dark:#a89b88;
+  --cream:#EDE7DD;
+  --paper:#FBFAF7;
+  --ink:#2A2420;
+  --ink-soft:#5c5349;
+  --bronze:#A9814F;
+  --bronze-dark:#8a6a3f;
+  --line:#DAD2C4;
+  --good:#6B7F5E;
+  --good-bg:#eef1ea;
+  --bad:#AE5B3F;
+  --bad-bg:#f7e9e3;
+  --warn:#B08A2E;
+  --warn-bg:#f7f0dc;
+  --radius:7px;
+  --shadow:0 1px 2px rgba(42,36,32,.06);
+  --sidebar-w:224px;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:'Manrope',sans-serif;
+  background:var(--cream);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  min-height:100vh;
+}
+h1,h2,h3,.serif{font-family:'Fraunces',serif;}
+button{font-family:inherit;}
+input,select,textarea{font-family:'Manrope',sans-serif;}
+::selection{background:var(--bronze);color:#fff;}
+a{color:inherit;}
+
+/* ---------- LOGIN ---------- */
+#login-screen{
+  min-height:100vh;display:none;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 38%, #d8cfbf 0%, var(--wall) 55%, #a99c88 100%);
+  padding:24px;
+}
+.login-card{
+  background:var(--paper);
+  border-radius:14px;
+  padding:44px 40px 36px;
+  width:100%;max-width:380px;
+  box-shadow:0 18px 50px rgba(30,24,18,.25);
+  text-align:center;
+}
+.brand-mark{
+  font-family:'Fraunces',serif;font-weight:700;font-size:38px;letter-spacing:2px;
+  color:var(--ink);margin-bottom:2px;
+}
+.brand-sub{
+  font-size:11px;letter-spacing:4px;color:var(--bronze-dark);margin-bottom:28px;font-weight:600;
+}
+.role-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:18px;}
+.role-btn{
+  padding:12px 6px;border-radius:8px;border:1.5px solid var(--line);background:var(--cream);
+  cursor:pointer;font-size:12.5px;font-weight:600;color:var(--ink-soft);transition:.15s;
+}
+.role-btn.active{border-color:var(--bronze);background:#f3ead9;color:var(--bronze-dark);}
+.pin-dots{display:flex;gap:12px;justify-content:center;margin:18px 0 22px;}
+.pin-dot{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--line);background:#fff;}
+.pin-dot.filled{background:var(--bronze);border-color:var(--bronze);}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.keypad button{
+  padding:15px 0;border-radius:9px;border:1px solid var(--line);background:#fff;
+  font-size:17px;font-weight:600;cursor:pointer;color:var(--ink);
+}
+.keypad button:active{background:var(--cream);}
+.keypad .wide{grid-column:span 1;font-size:13px;color:var(--ink-soft);}
+.login-err{color:var(--bad);font-size:12.5px;margin-top:10px;min-height:16px;}
+.login-hint{font-size:11px;color:#9a8f80;margin-top:16px;}
+
+/* ---------- APP SHELL ---------- */
+#app{display:none;min-height:100vh;}
+#app.show{display:flex;}
+.sidebar{
+  width:var(--sidebar-w);flex-shrink:0;background:var(--wall);color:var(--ink);
+  display:flex;flex-direction:column;padding:20px 14px;position:sticky;top:0;height:100vh;
+}
+.side-brand{padding:4px 8px 20px;border-bottom:1px solid rgba(42,36,32,.15);margin-bottom:14px;}
+.side-brand .name{font-family:'Fraunces',serif;font-weight:700;font-size:21px;letter-spacing:1px;}
+.side-brand .tag{font-size:9.5px;letter-spacing:2.5px;color:var(--ink-soft);font-weight:600;margin-top:2px;}
+.nav-item{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:7px;cursor:pointer;
+  font-size:13.5px;font-weight:600;color:var(--ink-soft);margin-bottom:2px;transition:.12s;
+  user-select:none;
+}
+.nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:.75;}
+.nav-item:hover{background:rgba(255,255,255,.35);}
+.nav-item.active{background:var(--paper);color:var(--ink);}
+.nav-item.active svg{opacity:1;}
+.nav-group-label{font-size:10px;letter-spacing:1.5px;color:#7a6f5f;font-weight:700;margin:14px 10px 6px;text-transform:uppercase;}
+.side-foot{margin-top:auto;padding-top:14px;border-top:1px solid rgba(42,36,32,.15);}
+.side-user{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:12.5px;font-weight:600;}
+.side-user .dot{width:7px;height:7px;border-radius:50%;background:var(--good);}
+.logout-btn{font-size:11.5px;color:var(--ink-soft);background:none;border:none;cursor:pointer;padding:6px 8px;text-decoration:underline;}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;padding:16px 28px;
+  border-bottom:1px solid var(--line);background:var(--paper);flex-shrink:0;
+}
+.topbar h1{font-size:21px;margin:0;font-weight:600;}
+.topbar .date-badge{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+.cash-badge{
+  display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;padding:7px 12px;border-radius:20px;
+  cursor:pointer;
+}
+.cash-badge.open{background:var(--good-bg);color:var(--good);}
+.cash-badge.closed{background:var(--bad-bg);color:var(--bad);}
+.cash-badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+
+.sync-badge{
+  display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:6px 11px;border-radius:20px;
+  background:var(--cream);color:var(--ink-soft);
+}
+.sync-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+.sync-badge.online{background:var(--good-bg);color:var(--good);}
+.sync-badge.syncing{background:var(--warn-bg);color:var(--warn);}
+.sync-badge.offline{background:var(--warn-bg);color:var(--warn);}
+.sync-badge.local{background:var(--cream);color:var(--ink-soft);}
+
+#page-content{flex:1;overflow-y:auto;padding:24px 28px 60px;}
+
+/* ---------- GENERIC UI ---------- */
+.grid-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:22px;}
+.kpi-card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;}
+.kpi-card .label{font-size:11.5px;color:var(--ink-soft);font-weight:600;letter-spacing:.3px;}
+.kpi-card .value{font-family:'Fraunces',serif;font-size:26px;font-weight:600;margin-top:4px;}
+.kpi-card .sub{font-size:11px;color:var(--ink-soft);margin-top:3px;}
+
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;}
+.section-head h2{font-size:18px;font-weight:600;margin:0;}
+.section-head .actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+.btn{
+  border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 14px;border-radius:7px;
+  font-size:12.5px;font-weight:700;cursor:pointer;transition:.12s;display:inline-flex;align-items:center;gap:6px;
+}
+.btn:hover{border-color:var(--bronze);}
+.btn-primary{background:var(--ink);border-color:var(--ink);color:#fff;}
+.btn-primary:hover{background:#403a33;}
+.btn-bronze{background:var(--bronze);border-color:var(--bronze);color:#fff;}
+.btn-bronze:hover{background:var(--bronze-dark);}
+.btn-danger{color:var(--bad);}
+.btn-danger:hover{border-color:var(--bad);}
+.btn-sm{padding:5px 10px;font-size:11.5px;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;}
+
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead th{
+  text-align:left;font-size:10.5px;letter-spacing:.6px;color:var(--ink-soft);font-weight:700;
+  text-transform:uppercase;padding:9px 12px;border-bottom:1.5px solid var(--line);white-space:nowrap;
+}
+tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:#f5f1ea;}
+.table-wrap{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto;}
+.empty-row td{text-align:center;color:var(--ink-soft);padding:30px;font-size:13px;}
+
+.tag{display:inline-flex;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+.tag-good{background:var(--good-bg);color:var(--good);}
+.tag-bad{background:var(--bad-bg);color:var(--bad);}
+.tag-warn{background:var(--warn-bg);color:var(--warn);}
+.tag-neutral{background:var(--cream);color:var(--ink-soft);}
+
+.field{margin-bottom:13px;}
+.field label{display:block;font-size:11.5px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;}
+.field input,.field select,.field textarea{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;color:var(--ink);
+}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--bronze);}
+.field-row{display:grid;gap:12px;}
+.cols-2{grid-template-columns:1fr 1fr;}
+.cols-3{grid-template-columns:1fr 1fr 1fr;}
+
+.pill-tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;}
+.pill-tab{padding:7px 14px;border-radius:20px;font-size:12px;font-weight:700;background:var(--paper);border:1px solid var(--line);cursor:pointer;color:var(--ink-soft);}
+.pill-tab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+
+.search-box{position:relative;flex:1;max-width:280px;}
+.search-box input{width:100%;padding:8px 12px 8px 30px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;background:#fff;}
+.search-box svg{position:absolute;left:9px;top:9px;width:14px;height:14px;opacity:.5;}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(30,24,18,.45);display:none;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.overlay.show{display:flex;}
+.modal{background:var(--paper);border-radius:12px;width:100%;max-width:480px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(20,16,12,.3);}
+.modal.wide{max-width:640px;}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line);}
+.modal-head h3{margin:0;font-size:16.5px;font-weight:600;}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--ink-soft);line-height:1;}
+.modal-body{padding:20px 22px;overflow-y:auto;}
+.modal-foot{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px;}
+
+.toast-wrap{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--ink);color:#fff;padding:11px 18px;border-radius:8px;font-size:12.5px;font-weight:600;box-shadow:0 8px 20px rgba(0,0,0,.25);animation:slideIn .2s ease;}
+.toast.bad{background:var(--bad);}
+.toast.good{background:var(--good);}
+@keyframes slideIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+
+.progress-bar{height:6px;background:var(--cream);border-radius:4px;overflow:hidden;}
+.progress-bar > div{height:100%;background:var(--bronze);}
+
+/* POS layout */
+.pos-wrap{display:grid;grid-template-columns:1fr 340px;gap:16px;height:100%;}
+.pos-catalog{overflow-y:auto;padding-right:4px;}
+.pos-cart{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);display:flex;flex-direction:column;height:calc(100vh - 130px);position:sticky;top:0;}
+.pos-cart-items{flex:1;overflow-y:auto;padding:14px;}
+.pos-item-card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:12px 13px;cursor:pointer;
+  transition:.12s;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;
+}
+.pos-item-card:hover{border-color:var(--bronze);}
+.pos-item-card .nm{font-weight:700;font-size:13px;}
+.pos-item-card .cat{font-size:11px;color:var(--ink-soft);}
+.pos-item-card .pr{font-weight:700;font-size:13px;color:var(--bronze-dark);white-space:nowrap;}
+.cart-line{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+.cart-line:last-child{border-bottom:none;}
+.qty-ctrl{display:flex;align-items:center;gap:6px;margin-top:4px;}
+.qty-ctrl button{width:20px;height:20px;border-radius:5px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:12px;line-height:1;}
+.pos-cart-foot{padding:14px 16px;border-top:1px solid var(--line);}
+.pos-totals-row{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:6px;color:var(--ink-soft);}
+.pos-totals-row.total{font-size:17px;font-weight:700;color:var(--ink);margin-top:6px;}
+
+.print-area{display:none;}
+@media print{
+  body *{visibility:hidden;}
+  .print-area, .print-area *{visibility:visible;}
+  .print-area{display:block !important;position:absolute;top:0;left:0;width:100%;padding:20px;}
+}
+
+.attn-badge{width:8px;height:8px;border-radius:50%;background:var(--bad);display:inline-block;margin-left:5px;}
+
+@media (max-width:880px){
+  :root{--sidebar-w:0px;}
+  .sidebar{position:fixed;left:-240px;width:220px;z-index:90;transition:.2s;box-shadow:0 0 30px rgba(0,0,0,.3);}
+  .sidebar.open{left:0;}
+  .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(20,16,12,.4);z-index:85;}
+  .sidebar-backdrop.show{display:block;}
+  .main{width:100%;}
+  #page-content{padding:16px 14px 50px;}
+  .topbar{padding:12px 14px;}
+  .pos-wrap{grid-template-columns:1fr;}
+  .pos-cart{height:auto;position:relative;}
+  .field-row.cols-2,.field-row.cols-3{grid-template-columns:1fr;}
+  .menu-toggle{display:flex !important;}
+  .table-wrap table{font-size:12.5px;}
+  .btn-sm{padding:7px 11px;}
+}
+@media (max-width:480px){
+  .field input, .field select, .field textarea{font-size:16px;} /* prevents iOS auto-zoom on focus */
+  .login-card{padding:32px 22px 28px;}
+  .topbar h1{font-size:17px;}
+  .topbar .date-badge{font-size:10.5px;}
+  .grid-kpi{grid-template-columns:1fr 1fr;}
+  .kpi-card{padding:12px 13px;}
+  .kpi-card .value{font-size:20px;}
+  .modal{max-width:100%;}
+  .modal-body{padding:16px;}
+  .section-head{align-items:stretch;}
+  .section-head .actions{width:100%;}
+  .section-head .actions .btn{flex:1;justify-content:center;}
+  .cash-badge, .sync-badge{padding:6px 8px;}
+  .cash-badge .label, .sync-badge .label{display:none;}
+}
+.menu-toggle{display:none;background:none;border:none;cursor:pointer;padding:4px;}
+.menu-toggle svg{width:22px;height:22px;}
+</style>
+</head>
+<body>
+
+<!-- ================= CONFIGURAÇÃO INICIAL (primeira utilização) ================= -->
+<div id="setup-screen" style="min-height:100vh;display:none;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 38%, #d8cfbf 0%, var(--wall) 55%, #a99c88 100%);padding:24px;">
+  <div class="login-card" style="max-width:420px;text-align:left;">
+    <div style="text-align:center;">
+      <img id="setup-logo" style="width:64px;height:64px;border-radius:50%;object-fit:cover;margin-bottom:8px;" alt="RENW">
+      <div class="brand-mark" style="font-size:28px;">Configuração inicial</div>
+      <div class="brand-sub" style="margin-bottom:22px;">RENW SKIN RENEWAL</div>
+    </div>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin:-10px 0 16px;">Esta é a primeira vez que a aplicação é aberta neste dispositivo. Preencha os dados reais do salão e crie a conta de Administrador — não há dados de demonstração.</p>
+    <div class="field"><label>Nome da empresa</label><input id="s-company" value="RENW Skin Renewal"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Telefone</label><input id="s-phone" placeholder="84 000 0000"></div>
+      <div class="field"><label>NUIT</label><input id="s-nuit" placeholder="Opcional"></div>
+    </div>
+    <div class="field"><label>Morada</label><input id="s-address" placeholder="Ex: Nampula, Moçambique"></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:16px 0;">
+    <div class="field"><label>O seu nome (Administrador)</label><input id="s-admin-name" placeholder="Ex: Sérgio Chuni"></div>
+    <div class="field"><label>Crie um PIN de acesso (4 dígitos)</label><input id="s-admin-pin" maxlength="4" inputmode="numeric" placeholder="Ex: 7392"></div>
+    <div class="login-err" id="setup-err"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:6px;padding:11px;" onclick="finishSetup()">Criar sistema</button>
+  </div>
+</div>
+
+<!-- ================= LOGIN ================= -->
+<div id="login-screen">
+  <div class="login-card">
+    <img id="login-logo" style="width:76px;height:76px;border-radius:50%;object-fit:cover;margin-bottom:10px;" alt="RENW">
+    <div class="brand-mark">RENW</div>
+    <div class="brand-sub">SKIN RENEWAL &nbsp;·&nbsp; GESTÃO</div>
+    <div class="role-grid" id="role-grid"></div>
+    <div class="pin-dots" id="pin-dots"></div>
+    <div class="keypad" id="keypad"></div>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app">
+  <div class="sidebar" id="sidebar">
+    <div class="side-brand" style="display:flex;align-items:center;gap:9px;">
+      <img id="side-logo" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;" alt="RENW">
+      <div>
+        <div class="name" style="font-size:17px;">RENW</div>
+        <div class="tag" style="font-size:8.5px;">SKIN RENEWAL</div>
+      </div>
+    </div>
+    <nav id="nav-list"></nav>
+    <div class="side-foot">
+      <div class="side-user"><span class="dot"></span><span id="side-user-name">—</span></div>
+      <button class="logout-btn" onclick="logout()">Terminar sessão</button>
+    </div>
+  </div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
+
+  <div class="main">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="menu-toggle" onclick="toggleSidebar()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <div>
+          <h1 id="page-title">Painel</h1>
+          <div class="date-badge" id="today-date"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="sync-badge" id="sync-badge"></span>
+        <div class="cash-badge" id="cash-badge" onclick="navigate('caixa')"></div>
+      </div>
+    </div>
+    <div id="page-content"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal-el"></div></div>
+<div class="toast-wrap" id="toast-wrap"></div>
+<div class="print-area" id="print-area"></div>
+
+<script>
+/* =========================================================================
+   RNW SKIN RENEWAL — ERP
+   Single-file app. Data persisted in localStorage (offline-first).
+   ========================================================================= */
+
+const NAV = [
+  {group:'Operação'},
+  {id:'dashboard', label:'Painel', icon:'grid'},
+  {id:'agenda', label:'Agenda', icon:'cal'},
+  {id:'vendas', label:'Vendas / POS', icon:'cart'},
+  {id:'caixa', label:'Caixa', icon:'box'},
+  {group:'Cadastros'},
+  {id:'clientes', label:'Clientes', icon:'user'},
+  {id:'servicos', label:'Serviços', icon:'spark'},
+  {id:'produtos', label:'Produtos', icon:'tag'},
+  {id:'estoque', label:'Estoque', icon:'stack'},
+  {id:'fornecedores', label:'Fornecedores', icon:'truck'},
+  {id:'profissionais', label:'Profissionais', icon:'users'},
+  {group:'Gestão'},
+  {id:'relatorios', label:'Relatórios', icon:'chart'},
+  {id:'contabilidade', label:'Contabilidade', icon:'coin'},
+  {id:'usuarios', label:'Utilizadores', icon:'shield'},
+  {id:'config', label:'Configurações', icon:'gear'},
+];
+
+/* Which pages each profile can access. Administrador always has full access. */
+const ROLE_ACCESS = {
+  'Administrador': ['dashboard','agenda','vendas','caixa','clientes','servicos','produtos','estoque','fornecedores','profissionais','relatorios','contabilidade','usuarios','config'],
+  'Recepção': ['dashboard','agenda','vendas','caixa','clientes'],
+  'Esteticista': ['dashboard','agenda','clientes'],
+};
+function allowedPages(){
+  return ROLE_ACCESS[session ? session.role : ''] || ['dashboard'];
+}
+function canAccess(page){ return allowedPages().includes(page); }
+function isAdmin(){ return !!(session && session.role==='Administrador'); }
+
+const ICONS = {
+  grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  cal:'<rect x="3" y="4" width="18" height="17" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/>',
+  cart:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L21 7H6"/>',
+  box:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>',
+  spark:'<path d="M12 2l1.8 5.6L19 9l-5.2 1.4L12 16l-1.8-5.6L5 9l5.2-1.4L12 2z"/>',
+  tag:'<path d="M20 12l-8 8-9-9V4h7l10 8z"/><circle cx="7.5" cy="7.5" r="1"/>',
+  stack:'<path d="M12 2l9 5-9 5-9-5 9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/>',
+  users:'<circle cx="8" cy="8" r="3.5"/><path d="M2 20c0-3.6 2.7-6.5 6-6.5s6 2.9 6 6.5"/><circle cx="17" cy="9" r="3"/><path d="M14.5 13.2c2.7.4 4.5 2.9 4.5 5.8"/>',
+  chart:'<line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="6"/><rect x="12" y="7" width="3" height="11"/><rect x="18" y="3" width="3" height="15"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V19a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H4a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.6V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V10a1.7 1.7 0 0 0 1.6 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/>',
+  plus:'<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  trash:'<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>',
+  edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>',
+  search:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.6" y2="16.6"/>',
+  coin:'<circle cx="12" cy="12" r="9"/><path d="M9.5 15.5c.5.8 1.4 1.2 2.5 1.2 1.8 0 3-1 3-2.3 0-1.5-1.3-2-3-2.4-1.7-.4-3-1-3-2.4 0-1.3 1.2-2.3 3-2.3 1.1 0 2 .4 2.5 1.2"/><path d="M12 6.5v11"/>',
+  shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
+  truck:'<rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.7"/><circle cx="17.5" cy="19" r="1.7"/>',
+  layers:'<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+};
+function ic(name,size=16){return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
+
+const PAY_METHODS = ['Numerário','M-Pesa','E-Mola','Cartão POS','Transferência','Pagamento Parcelado','Crédito (Super Cliente)'];
+const PRODUCT_CATS = ['Pele','Cabelo','Corpo','Suplementação'];
+const SERVICE_CATS_DEFAULT = ['Depilação a Laser','Microagulhamento','Limpeza de Pele'];
+function serviceCats(){ return DB.serviceCategories || SERVICE_CATS_DEFAULT; }
+
+/* ---------- persistence ---------- */
+/* =========================================================================
+   FIREBASE (sincronização entre dispositivos — opcional)
+   Preencha FIREBASE_CONFIG com os dados do seu projeto Firebase
+   (Firebase Console → Project settings → Your apps → SDK setup and
+   configuration). Enquanto ficar com os valores "SUBSTITUA_AQUI", a app
+   funciona apenas com armazenamento local neste dispositivo (offline).
+   Depois de preenchido, os dados sincronizam automaticamente entre todos
+   os dispositivos que abrirem este mesmo ficheiro, e continuam a
+   funcionar offline (o Firestore guarda uma cópia local e sincroniza
+   sozinho assim que a ligação à internet voltar).
+   ========================================================================= */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCmS1zp__xP7-zyVieTC0nbeb8jjORmeOs",
+  authDomain: "rnw-skin-renewal.firebaseapp.com",
+  projectId: "rnw-skin-renewal",
+  storageBucket: "rnw-skin-renewal.firebasestorage.app",
+  messagingSenderId: "937102767906",
+  appId: "1:937102767906:web:e7d326430ed60af55e177b",
+};
+const FIRESTORE_PATH = {collection:'rnw_erp', doc:'main'};
+
+let fbApp=null, fbDb=null, fbDocRef=null, fbApplyingRemote=false, fbSaveTimer=null;
+
+function firebaseConfigured(){
+  return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey.indexOf('SUBSTITUA_AQUI')===-1;
+}
+function updateSyncBadge(state){
+  const el = document.getElementById('sync-badge');
+  if(!el) return;
+  const map = {
+    online:   ['online','Sincronizado'],
+    syncing:  ['syncing','A sincronizar...'],
+    offline:  ['offline','Sem ligação — dados locais'],
+    connecting:['syncing','A ligar...'],
+    local:    ['local','Modo local (sem sincronização)'],
+  };
+  const [cls,label] = map[state] || map.local;
+  el.className = 'sync-badge '+cls;
+  el.innerHTML = `<span class="dot"></span><span class="label">${label}</span>`;
+}
+function pushToFirebase(){
+  if(!fbDocRef) return;
+  fbDocRef.set({db: JSON.stringify(DB), updatedAt: firebase.firestore.FieldValue.serverTimestamp()})
+    .then(()=>updateSyncBadge('online'))
+    .catch(()=>updateSyncBadge('offline'));
+}
+function scheduleFirebaseSave(){
+  if(!fbDocRef || fbApplyingRemote) return;
+  updateSyncBadge('syncing');
+  clearTimeout(fbSaveTimer);
+  fbSaveTimer = setTimeout(pushToFirebase, 500);
+}
+function listenFirebase(){
+  fbDocRef.onSnapshot({includeMetadataChanges:true}, snap=>{
+    if(snap.metadata.hasPendingWrites) return; // eco da nossa própria escrita — ignora
+    const data = snap.data();
+    if(data && data.db){
+      fbApplyingRemote = true;
+      DB = migrate(JSON.parse(data.db));
+      localStorage.setItem(DB_KEY, JSON.stringify(DB));
+      fbApplyingRemote = false;
+      updateSyncBadge(snap.metadata.fromCache ? 'offline' : 'online');
+      if(session){ buildNav(); navigate(currentPage); }
+    }
+  }, ()=>updateSyncBadge('offline'));
+}
+async function initFirebaseAndBoot(){
+  const localDB = load();
+  if(firebaseConfigured() && typeof firebase!=='undefined'){
+    updateSyncBadge('connecting');
+    try{
+      fbApp = firebase.initializeApp(FIREBASE_CONFIG);
+      fbDb = firebase.firestore();
+      try{ await fbDb.enablePersistence({synchronizeTabs:true}); }catch(e){ /* persistence unavailable in this tab/browser — sync still works, just without offline cache */ }
+      fbDocRef = fbDb.collection(FIRESTORE_PATH.collection).doc(FIRESTORE_PATH.doc);
+      const snap = await fbDocRef.get();
+      if(snap.exists && snap.data() && snap.data().db){
+        DB = migrate(JSON.parse(snap.data().db));
+        localStorage.setItem(DB_KEY, JSON.stringify(DB));
+      } else if(localDB){
+        DB = localDB;
+        pushToFirebase();
+      } else {
+        DB = null;
+      }
+      listenFirebase();
+    }catch(e){
+      console.error('Firebase indisponível, a usar dados locais.', e);
+      DB = localDB;
+      updateSyncBadge('offline');
+    }
+  } else {
+    DB = localDB;
+    updateSyncBadge('local');
+  }
+  if(DB){
+    document.getElementById('login-screen').style.display='flex';
+    initLogin();
+  } else {
+    document.getElementById('login-screen').style.display='none';
+    document.getElementById('setup-screen').style.display='flex';
+  }
+}
+
+const LOGO_B64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAUEBAYFBQUGBgYHCQ4JCQgICRINDQoOFRIWFhUSFBQXGiEcFxgfGRQUHScdHyIjJSUlFhwpLCgkKyEkJST/2wBDAQYGBgkICREJCREkGBQYJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCT/wAARCAD9AQQDASIAAhEBAxEB/8QAHAAAAgIDAQEAAAAAAAAAAAAAAAMCBAUGBwgB/8QAUBAAAQMCBAMGAwIJBQwLAAAAAQACAwQRBQYhMRJBUQcTImFxgZGhsRQyFSNCUmJyksHRFlOCouEIJSY0Q2Rzk7LC0vAkMzU2N1RjZYOEs//EABgBAAMBAQAAAAAAAAAAAAAAAAACAwEE/8QAJBEBAQEBAAMBAAICAgMAAAAAAAECEQMhMRJBURMiBDKBsfD/2gAMAwEAAhEDEQA/APVKEIQAhCEAIQhACEIQAhfHOaxpc5wa0C5JNgFqOOdp2CYUXRUrnYjUDThgPgB837fC6y2T62Trb1XrcRosNj7ytq4KZn50rw0fNcaxjtNzDiocyCZuHxH8mnHi/aOvwstVkkmqJTNPNJM9x1fI4uPxKS+SfwaY/t2uv7Ucs0QPBVyVThygjJ+ZsPmtfqu2mG5bR4PK6x3mlDfkAfquZ92SNb35KTIg3XmUl8lPMRu03bNjTr91h1BGOXFxOP1CpSdr+ZnEcLaBo8oT+9y1R0ZJvbT6KPdkctDol/d/tv5jbG9sOZ2O8UeHvANiDE4E/Bytw9t2LsIFRhVDKP0HOYfndaP3QDTc6nolSMAB3JC2brLmOrUHbdh8xDa3CauDqYntkHzstkw3tJyviZa1mKRwSO/IqAY/mdPmuB93xNvr0S5GkNIAumm6X8R6kimjnjEkUjJGO2cw3B91JeYsNxfEsGk73Dq2opXDU908gH1Gx91vGB9tWJUjhDjNJHWxj/KxWjk+H3T8k83P5LcuyoWDy9nTA8zsH4PrWma1zTyeCVv9E7+ouFnE5QhCEAIQhACEIQAhCEAIQhACEIQAhCEAIQl1FRDSQPnqJWRRRgue95sGjqSgGLV80doOFZcc6ma4VleB/i8bvufrHl9fJadnDtQmr+OhwJ76enPhdVWs+T9X80ee/otBjaHG4uXu8RN9T7qet/0eZ/tmsw5sxrMpP2yctpyfDTQ+GMevX3WJZG1mpAudEON2jTTzXxrgBsd+alapICwkH4L7G1oNjcm6m27nbE+XNMaxrtQEvWoMHF4uWyOCx4inuju26UWEaXN0vTcQ4dQUGLe2pTmtc0eIC3VMaC4eSOjjHvi4T5pZZoCRqeiyEsQbrbkkOivtyR0cUSzhSZA7X1V6WAgjRV5Ija51TylsV78N77pTwTyVh1zbTVLcD7JoUthdC4SxvMcjTdrmkgg+RC37KXbHiWFllLjrXV9KLN78aTM9eT/ex81oDgL3vYDVLcCQRcLZeMsepMHxvD8fom1mG1UdTA7TiYdWnoRuD5FXV5awPMGJ5ZrhW4XUuheNHN3ZKOjhzC7zkbtEw7OUAi0pcSY28lM479XMPMfMKs10lzxtiEITFCEIQAhCEAIQhACEIQAhCTWVkGH0stXVStigiaXve7YBAQxLEqTCKKWtrpmwwRC7nO+g6nyXFM451qs2VPceKnw9jrxwX+/0c/qfLYJOc85VObKwuHFFQROtBCd/13dXfRYNjQG3voFLWuqZzxIMDeQHqjhdrwr6dW8WttlJp08lM740cehUmxXI0TGgWIsFJum40S2tADW6C1zzU44y0Cwt1C+NbqLbc9FZjYTbdJaaQcALTYWQKckcQGqsMZcXGxTmxX326JLo8imIuJw0HCN7qfcACwAsr4p7nb5KIpi3Uj3S/o35YyWH4dSlOhDNtzustLEHNIt5aKjLDa1uS2aZcqEjABe2pVBzOJ7iRdZWWPwk8+iqPgIuQPZUlJYoOjJdyGiXKW2sDcnZPqASdDa2/klGPTTT96pKSxUdHYgnVLeL3vdPe1w2F0tzCb62KaFILgTwkajZRhnnoahlVTTPhnidxxvjdZzT1BU3N4LAe6iWgi61juvZr2oQ5oYzC8UcyHFmt8J2bUgcx0d1HuPLoK8g97LSzsmhe+KRjg5r2mxaRsQeq9A9l/aOzNtJ+D697WYtTt8XIVDR+WPPqPf0pnX8UljfUIQnKEIQgBCEIAQhCAFxftLzocdr/wAE0Mh+wU77Pc06TSDn+qOXnr0W49qObDgeFjDqSThraxpFwdY49ifU7D36LjbADYaix2sp71/B8z+Uo2h97HQKfCL6W81B12/d902MhwB5KZ0BuL7BODhbzHJRcwE6EAWUmN4rH29UtbDQSWXT4Yi7fZJYw7HUDqrrWnQjRJaeJRw7X2VhkIuNNEQt0uR7K1CzhtrdS1VJEW0/Dt906hW44OIaDVNjg47Bu11fgpQ2xdyUdaVzlTjpSAdCSnCl422IsslHTA6tGnmmCis6/VSu1Jlr8tDwF1uYVGalLRqB6raZ6TQ6fJYyppvCbhbnbLlrNTBwkqo8Fg8lm6ilI5c1j5oA0bcR5ldGdI6yw8sPeEuOiqPZY2ubbrLPgO+wHJUp4wDrci+wVpUrFFzxZIJab2OqsPaLnQFJ4OHaypKnVaTw3J90g3B0Jv6K1IzQkpJbf1TMVn8R0cAmUFZUYVVw1tFK+GpgeHxyN3BC+S2taygGF4v90fVax6ayJnKnzngrKtobHVxWZUwg/cf1H6J3H9i2NeXsl5snyZjsGIMLnU5/F1MY/wApHfXTqNx/avTlJVQ11LFVU0jZYZmCSN7dnNIuCq5vU7OGoQhMwIQhACVWVcNBSzVVQ8MhhYXvceQAuU1c67YsfNLh9Pg0L7Pqj3k1v5tp0Hu76FZbyNk65rj+MVGYMZqcTnBBmd4G3+4wfdb7D5qpG7wkdVEO4ha1rILbjfht05qNUS1NgSA3dOa4HUbFKhBfq+xDdrJ40dbqlpkWtN9Faa27fLmlsbqNLJ7BYWF/dJTRJguQrsDGj7yVE3QeC56gqxGAHDnrsp6p5FiNoLgb6Hkr0MIFiTdV4owCCbalX6bU+myjqq5i3SxaaBZOGAPaOJVqUHpusnA0WBK59VaejoYQW6jVSfFw7C6lGdQpk67JC2+1SSLTZY6pp730KzL7G/0VOUcPJB5etdrKUtBJ3Gyw1TCRc/8AJWy1bS67trrD1UehFr35q2NE1GAmsSQAbrGzNOvMrN1EDTew1G6x88IAvoCunNQ1GHkbwgiyryC/oFfnbrbhJsqsrNtLK0qViq43v0CS8C+ye7Q+iU5tyb/JPCKzwCLnko+IgEgNtpYJz2m99bJertb/ABTMId6X1XZewrNxqaWfLdVJ+Mp7zUvEd47+Jo9Cb+h8lx0jQq3gWMTZexqjxan0fSyB5b+c3ZzfcEhbLyssesUJNHVw19JDV07w+GdjZGOHNpFwnKyYQhCAF54ztjRx3M9dVBxdE2TuougY3QfHU+67hm3FPwNlrEa4Gz44XBn6x0b8yF50jYQNRqeaTdPk2M6G4upXG24uvke2mqnYWOmylTPtiPHGLnYhOaS4X5HZfIgA0bXKczxbC2uqW08fYwW/SysRNuN7BRbGel1ahYRpa6naeQ2IWFwrMbRud/NLbHY6J7YyeSlapIsQtB0V6ma5pVeni2WQijta/upaquV6nFxrv1V+F+gD/ZUIrDZXIjcC6hVOLrD0Uy4WSA8tC+F5Ot0peJSG6qzk2uU50lhqqs7y4Hog0inM67Tf4LF1ZvtoslJzG6x9Sy97KmWaYeo0BvvyWMnbxNvYj1WZqYuSx1REA3bVdGahqMPK21zuqj2cW51WQqW66CypSAEq+alYpSxgXtukv8INt+qtvjc7VVZBqb7BUlTqs4EnUctEvhJcrOnCdP7EvTfUJowhwANkl+huRcXsnPd4rAeqU48NwdVrHfOxLHfwnlQ0D38UuHSGIX37t3ib+8ey6EvP/Yhihw/OLqNzg2Ovp3Mt1e3xD5cS9AKub6T19CEITMaH2xVvcZcgpAbGqqGg/qtBd9bLjgJsARuuk9tVVxVuF0l9GRySn3IH7iubDQHi23UtfVM/DGute2gA+CZHe2l7JLPG3ewTWFvDtdJTQ5jSXAq5Tx8QKqQ6nTT1ViWf7LA5wAvbT1U6eNfzH2o5eyhijsNrYK6aZjGvcYGNc0X5auGqdF2q4c9gc3LuYC12t+4j2/bXFu1C7s1yOcbl0TCT13XZ6fB4RTREQ6cAvp5JfJmThsat6tUPbBlGSqbS1r67CpXGw+205Y39oXHut8hbDUU8c8EjJIpGh7JGODmuB2II3C4bnvLsNbhM7mxhroWF7DzBAVv+5xzDVyvxLAJnufSxRtqYQ437ol1nAdAbg26g9VPyePmf1D433X5rt0V2EABY3F+0HKmWK37DjGN09JUhgkMbmvJDTsdAeiyTiGanW3ReYu12V1T2jSPeb8XdD2up+PH7vKfe/wAT09ER9r2QQR/hJTn/AOKX/hVlnbJ2fiw/lLTg8vxUv/CtZp8EcAA2qkt0usjh+WmzVEfezvkAcCWuOilc553/AO/9Kd18dLDg4Ag3B1HmsPmDOGX8p/Zvw7ikGH/anFsJlv4yLX2BtuN1lYiOEei4D/dPMmra7L9LTsL5T33C3roCbfBJ48zWuU27ydjvrrFgcwhzXC4cDcEciFUkcR5rhPYP2uGAw5NzBOQy/d0FTKfuH+ZcTy/NPLbou7zMtdG8XGuUY1NTsY/FK+lwugqK+tmbBTU7DJLI69mNG50VWOaKsgiqYJBJDMwPY8bOaRcH4FYPtVk4ez3H+E70cg+SdkmUz5Nwhzjcikibf0aFsnrov3jHtzxlirxn8CQYxC/Eu8dF9n4XB3G29xci3Iq5UAX1GnVcC7WaafK3aIzGqMFrnStqWkaeNp1Huu60GI0+MYXS4jTkGGpibK30Iuui5/Mln8oy9tla7WZuy7Fixwh+LQtxDvBEIC1wPEdhe1ufVWJ4rHZck7b8Jfh+YKXGae7DNYFzeUjdQf8AnoumZaxpmYsAo8QBHFLGC8dHcx8bq0n+sqVvuwwtcTwtVFtXSTV89Cyoa+pp2tfLGL3YHbXO2tllaiWOjglqJSGxxtL3E8gAufZLllm+041PfvMTmdMR0j2YPgAfdNn2XXptL7tcSd0t4u24T5gNCDvtZIc3S91SEpLtDtdLNr+If2JhNr3Gig/pyTFXstYl+C8z4XXg8LYaqNxP6N7H5Er1avHri4NJHTRetcEq/t+DUFXe/f08cnxaCqYJpdQhCcri/bFNxZrgYTpHSM+bnLSb30dp0W3drlznJ4/zeP8AetTa0PAUdfVJ8fI2ji8lYtfWyUByTWuOhN7bJDxMeG2ihWPJYByUwBufZLrAGxLJ9bfjhfaiP8K3f6KP6ldups+5NEEbDmLDfC0A/jNtFw/tT/7zuF94GfUrqsGFRNoWnhYbsAI4Rros807xvivOtd7RM+YZi1PJheWTJiM0wLJZYmEMY072J3J+C2nsLyhLgNBV4hUgCqq+Fpt+Swa8PxOq5JmzCajK2LMxLDvxDHuvZg8LXdLdD0XoTswzHR5rypT1tKGxzR/iqmEf5OQb+x3HkVLz9mJJ8P4feu/y217w2M8jZeX+1V4Z2hOe/Rre6cdOV16amPCw8xZeYu1gcefng8xEPml/4/2m819R3Om7TMmtbdz8VtyIwyc3/qrPZazvlrHcTZQYa/EDVPY54E1DLE2w1Pic0Ba/TYLF3bQHvAHIFbLljCIqSpdMCS8ttclc9k56Xlvfbb2u+S5B2swirz9lCIi/HJOP6i6wx4aLXXLO0Lx9peSR/wCvP/8Aml8c9/8Aim38cp7TciSUFQ/EsPjcLHilY3n5jzXTuxPtb/lVRsy7jU4/C1Oz8RM861cYHP8ATA36jXqtnzRgTKmnc7guHDXRec86ZZrMp4ozF8MfJA2OQSB8ehheDcOC6M88uPzfqGrfHrseie1cg5Ax4bWo5D8l9yI8jKOFj/No9P6IWgu7S6ftA7KMdbOWR4xS0LxVQjQPFrCRvkeY5H2W95HI/krhlv8Ay0f+yFG5szy/2rNS67Gjdu+X/t+AmvjZeWmPeC29ufyVHsJzD+EMuTYRK+8tBJ4AecbtR8DxD4LpWY6JmJYbUU8jOIPYQQeei869n9fJkvtI+wzEtine6jeD5m7D8bfFXx/t47P6R3/ruX+27duDnVdPSYPSMD6ksfWS6fdiYLaeZJ+SwnYljl4avCHuv3bu9YD+ad/n9Vn8LkbmfMWP428ccLn/AGGmv/Nx6Ej1cSua4XK/JHaE2J54Ye+7p3Tu37fDT4Kvinc3Ke/+006p2mVzm4HDhEDiKjFZm0+m4Zu8/AfNVqOJkDI4owGsYA1oHIBYurrf5QZxqaoHipsKiFLF/pXavPsLBZqBlzdPichN32yMDmlvCTsNFCQcVyos0LS3RTeQ8kpykFmwO26VLq4cvJWHXtqQq8oub8wtYS4k6aaL092cz/acjYJJe/8A0Vjf2dP3LzCWkm/mvS3ZUb9n+D/6Nw/ruT4+l18bWhCFQjiva7GWZuD/AM+ljN/dwWnM1Gtx7Lfu2iDgxrDpzo2Sncy/m11/95c/aSdbKOvqk+JhvCegTWk33ulcYdqLqQNjfqkpkzbi4bpdUCI9SmuZdt+Z2S6jWPVZPpr8cK7VLDNFr69xH9Su7QUIFHGALngH0Wv1OWqTFcQjllgje7QEloJIHJbo2INY0W0At6JfLfcb456rRszYBHidDNSztuHC1+Y81z/IGa6zsszY+OvbI7Dqm0VU1ovxNv4ZG+Y+hIXa6+j7xnFbULWMUyvS4npUU8covs5t1vZrPKz3m9jqNPX0eK0DK6gqYaqmlbxRyRO4g4LzT2sERZ/JebaRO1004t11rJGT6DBsS+1UtHDDI1pHE0am4sl5iy1SV+Luq5aeN8osA5zQTb3UvFPzbFfJf1JW00Wc8mNaA/M2DNI3vVs/istTZ8yTCDbNmCD/AO5H/Fc/jwSJtgKWk/1DP4KwzA4nW4qWkI6CBv8ABQviVnkdZoa6hxSjjrqCrgq6WUExzQvDmPsbaEaHUELmmf8A/wATMkAb9/Pb/VrfMApxQ4RT0zGNjaxujWgAC+u3uqGJ4VFV47Q1ssbXSU5cYyRq24sSOinn1apr3Izc0Impy0jcLnebcuR1UcsT4wWvFiCF0pp8AusTi9G2eM3Gqzxa/NHkz+o8g5qwCsylWzmB8sdLM10XE028LhYsPkQvTmStMsYaNh9mj0/oha3mHLtPWcUdRCx7L3s4XBW44LG2HDYY2gAMaAABsurzX9SOfxTlptQbgg7HRede2jL8tBmOmrqZruOqIYC3Txg+H3/gvRU7bC61fM+Dw4kyKWWJjzE8PHEL2I5+qXw6/N6byzsYDKmFDCMFpaNg1awcR6nmfiue9tOCCnqaXFIgfF+KeR8QfquuUkVmgbWVTHcKp8RpjHPEyUNIcGuFxcKuLzXUtTs40XKuHPoMIhilB75/42Uncvdqb/T2WyRM4GjRLFOGEdFZiA9ldJIHy/sUiDbyTAGtFzoAoOeCNdkNJtueXJJf6bp7nNPoEh1jfVaUhwN/VemOy2MxZAwVpvrCXa+bnH968zvuy/FyXqrJ1IaHKmD05FiyjiB9eEXT4+l18ZdCEKhHOO2qiMuE4dWAf9TOYz6Obf6tXJm8WtnaX2su+9oWGnE8oYhG1vE+JnfsHmw8X0BXAmEOdcctSpbns+fiYcL2N01pGiUQLa+yBcONzokPFknUcwoy+Jtt1Fr2/d4r/uX3QOGunmlabRR8EnHawCysbg5vK4VCItIFrq3CPjySa9nz6MMXeNN1WfQ66A6+SvMLWBzpHBrWjic5xsAPNOp3RVMbZYJY5Y3C4fG4OafQhJ3h+dRw2l+zgm2pVepoDLO59lk4nxEhrZWFzr2aHC5sbH4HQ9E2KNrpC3ibxgXLb62626Kf699P+WGbhx6K7S4YC8H6hZLhha5wdJE0tALruA4Qdr9LqzHEGJbummIxOI55wrAq52HT0OM1EsbWlz6WjMkeov8Aeuqj+0vBnSNd+BsyG3/tx/iruKUVE2U1FZNBB3hDQ6V4Zc9BfdLfglOxhkdwNYBxF7jYAdb9FPkP2kv7UMHtrg+Zb20/vc7+K2HvW1lJDUMa9rJWNeGvbZwBF7Ecj5LA0+F0VYwTUssM8V7ccTw8X6XCzcMkfcRsjljeLENs4G9tDb05rLJPjZbfrCYnQiU8XDqrFFH3dO1vNOq6iminZBNUQMmk+5G6QBzvQblRkkihFnyMYQC7xOA0G59Bpqn72cJzlKnNtLrHVTRLG5nUdFckeHOc0ODi0+IA7aX+iqSkOe4BzSQeE2N7Hp6p8l0xUUXAHAjZLmAN76hW5bcTgxzTwmzgDsfPoqkx5O+StEqwlTTlkrrbckQtAvtdXahgdqqpa1o1CrL6S4g8gtFz5pMh8VtgmlrdydOXklus43PRNGI6EbfFKAAaeZ80wmyg9wIAtqVrH2io3YjiFNRsHE+olZEPVzgF61ijbDEyNgs1jQ0DyC859k2EnFc80JcC6OkDqpx6cIs3+sQvRypgmghCE5XyRjZWOjeA5rgWkHmCvNmN4Y/A8YrMPeCDTzOY0nm3dp+BC9KLkfbRgncVlJjUbbMnHcTED8satJ9Rcf0Um56NmueB5X0O6nVIZKGjqmMdc681JQ5jr9E5rQRqT5aJDGi44d07i4dCsrYtQkAeasxvF7KnEQANFYY/naySw8qvmSM1eA1tII2yOnjLOFzi0OvyuNlPI0VXh+W4oK7u++a958AGjS64BIAuepsLpz2iYAE3Vlh4IwxugA2SahpWuZPwytw3M1bVVEoniqnTFvFvTgyueGt8jxEkddVtNJDL/Kmpry4dy6ijgA5hwe5x/wBpIpwGPvYK7ARcvvup6h81qWbMBxGvzNUV9DM2Mzspqd7Tctkia8ucCOoNiDyI8yuk95xalYQNa6YO3sbrINkPDvayTU6fNa12j4DVZlp6GGkqGQOgdK4vcxr/AL0ZaBZwI3PqsjieHvlyBNhMQEcj8NNK1tyQD3fCBfc+qycga8gnWyJH3jLeW1ln9NYvI0dRQZcigqoWxSxvdoHh1x1uGt+i1zJ2BYhhOYoZZKi9EG1chg1PdyyvBJaehABI668ytyjd3cZaOaXExrHlw3RP5Z341rMFDVPz7h2KMiZJSxwsieC/hLbPcb/dN/vdQjtEwmbGqWljp5O78boZ3Dd1PILSMHqLfBZ6qaJJgbXIVes8bbHknk+FtYfJ8NZhmBzfbnipri9z3P8A5wgBrb/0WtCwuSKLEsMq6/7dMyVtaRVPsCC2ck8fsRb9kLaWnu2kDQHUqqLRv4mi56p5PpbWHpp6qizNiMb4IzR1sjZRLxniaRG1tuG2urd7rIzHiNlCrAe8Pt4glvlOnVPIS0uVw1CpvO/NPkd80gt11VISlHXU+qiNbnovriQTb5pR4gALpivjtBcJLzxbb9U06gpcMM1XVw00DC+SV4Yxg3c4mwC1js3YPghgw+vxmRutQ8U8R/Rbqfmbf0V1VY3LeDR5ewKiwuKxFPEGk/nO3cfcklZJWzORO0IQhawLFZpwOPMeBVeGvsHSsvG4/kvGrT8VlUIDy1NTy0k0kEzCyWNxY9pGrXA2IU2a+y6J2v5W+yVbMepmWhqCGVFh92Tk73GnqPNc3aS229lCznpWXqyze4upi7dzdLY/y0tovrHHXr1S1sWWOuwHY9Oicx+hF7DkSqzLtF9weaY13DzS00XI3W56hOjeDuqcb2nwgkk7nonssNvdLYaH3AdorELtbclTe6zg796nHK69uSSw0rINs0g3BuncbjsbBUA8X1TWThps46jbzScP1dbISF9dIC3kqzqg28LN97lLErn8reqzjend5qeSiZtNwEh8oaC08+qUXna+q2ZZ018hJu0qvI+17nZfe9Dd1Vnlu7fdNIW18lkJI6JTiLbJbpLv12C+OcOH1TyFtLlNlVceKwuAQmyPIvz81XJNtRa6eQtqEjtUtzrjZfXOSpHWTQpb979FG4eSdrKL32OuyUfvE3sOSYokfwk6+i6L2KZWOKY6/HKhl6ag0ivs6Yj/AHRr6kLn+G4bUYxiUGH0UZkqJ3iNjfM8z5Dcr1FljL9NlfA6XC6YAthb4321kefvOPqU2Z2s1fTKIQhVTCEIQAhCEBWxLDqfFqCehq4xJBOwse3y/ivO2ZsAqcr4vLh9UC8N8UcltJGHZw/f5r0ktczxlCHNuFGNvDHWw3dTynkfzT5H+1LrPTZvHAY3DYr6NDcFEtJPRVU1LVRPhnicWPY/dpHJBBvtooqGxvB0F7BNDbjR1gqzSGm101shAtrZZxqxBoDwuu7dWA48yPOyoGxsBofgnsdwgN1Prql4bq1x8YIt5BSa/hFri4VZr+SlxX25JeN6thxdsVMG9wdhzVNkvE4an2Tu8sCBql43p4fwjU6JvHpoVTLjwkkaD6r66Wwus43pj5Lk31ulOc4a8XxS3SEi6ix4eNTqt4OpumNtBtzKrvcTytzv1THvtfoqxdxG3XotkZ0t7zxW5KLpC4Bt0SjWx9LpLjwjZPIWvj3EDzJsEh5vpe3JSD2tedibABKfo4nck7ppCvjzpYckriB0X2R3COEEOJS3ENG61iDrXNuSST4jropyE7ro3ZN2dnHKhuOYpD/e6J14Y3j/ABh45/qg/E+6aTrK2rseyGcGo/w9iEdq6qZaFjhrDEefq76e66WhCrJxO3oQhC1gQhCAEIQgBCEIDSe0PILcywHEMPa1mKRNt0E7R+SfPofb04nLHLBI+GZj45I3Fr2PFi0jcEL1EtNz52eU+aInVlHwU+Jsbo/Zs36Lv3FJrPfcNnThwcCNdSpB5cNEV9FWYZVyUVbA+nqIjZ7HjUefp5qEbtDzCkoex13fJNa4jdVu9Gg5KbpC0aag7rONODnEjf1TGkk9FXZMLWBt0UmS66peN6sg8Jvf3Umy28gklwcLnRfB6hZxvVkSuc0jlf4r6HnQE7bqqX8W1whryGWNwfNZxvTnyEnYC/JQ4+HbSyU6S1tdVAvN+vqt4OnvlLhtskOeRrdL7zXR1/RRc7i5rZGdBcdwdOnVLkfcW0BUHEgkHS6i5waN7Jig+GxKUXeG6HSD1SSSTex8lrHx7ifuutqlP1OpN9/JTJAub2XQ+z3sqnzA6LFMajfT4bo6OE+F9R/BvnueXVbIy1R7OOzefNlUyvrw+LCIna8jUEfkt8up9h5egIIIqWCOCCNsUUbQxjGiwaBsAEU9PFSwMggjZFFG0NYxgsGgbABTVpOJ29CEIWsCEIQAhCEAIQhACEIQAhCEBg805OwzNlMI6xhZOwfiqmP77P4jyK4jmrJmLZTmIqou8pnG0dTGLsd6/mnyPzXopQngiqYXwzxslieLOY9tw4dCCl1npprjy1GTw+IhM4t+a6xmjsbp6kuqcvzClk3+yykmM/qndvzHouY4rguJ4DU9xiVFNTOJsC8eF3o7Y+ylZZ9Ul6rDhd0C+3+ChcA2BXwyeMBK1Ya8hmpGnNAdcgka/RVTcO0267hN4rNHHus4OnmVul9+ii+Y31Nj06pPFobm/RQdKQA4nS1gjjerDnX8kviN7HXRL4/Dr8VAPtt8UcZ0wvAJ10AXzivY2sN7JXEL2uSguPJbwdErvFrz2Snu0svkrr7lETJamRkEDJJZXmwYxpc4+gG61hYIJ0906hoazFKxlHh9NJU1D9Gxxi5P/PVb1lbsYxjFOGbGHDDKU6mPeZw9Nm++vkuwZdyrhGVqX7PhdIyG/wB+Q+KST9Z25+iaYtLdcaTkbsfp8LdHiOYBFVVgIcymHiiiPn+cfl6rpgFhYIQqycJb0IQhawIQhACEIQAhCEAIQhACEIQAhCEAIQhACVV0dNXQOgqoIp4nbskaHA+xTUIDQsb7HcEry6TDpJcOlP5LfHH+ydR7FaNinZNmXDyXwQw17BzgfZ37LrfK67shJcSmmq8yV2FYlh3grqCqprb95EW/OyomRpuLgleqS0OBDgCDyKxtVlrBK25qcJoZSeboG3+Nkv8AjN+3mbi5HkouN7r0TL2cZTmvxYJTi/5hc36FIPZZlEn/ALJH+uk/4ln+Oj9x554r80cbrcN2263XomPsxyhFtgsJ/We8/UrIUuTsu0ZBgwTD2kc+4aT8wt/FH7jzXDR1Vc9sdLTT1DukTC4/JbHhfZjmrEyC3DH0rDu+qcIx8N/kvQ0UMUDOCKNkbR+SxoAU1v8AjZ+3K8F7DKaMiTGcSfMecVMOFv7R1+QXQMEyxg2XY+DDMPgpyRYvAu93q46lZRCeZkLbaEIQtYEIQgBCEIAQhCAEIQgBCEID/9k=';
+const DB_KEY = 'rnw_erp_db_v1';
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function today(){return new Date().toISOString().slice(0,10);}
+function nowTime(){return new Date().toTimeString().slice(0,5);}
+function fmt(n){
+  n = Number(n||0);
+  return n.toLocaleString('pt-PT',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' MT';
+}
+function fmtDate(d){
+  if(!d) return '—';
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+function fmtDateLong(d){
+  const dt = new Date(d+'T00:00:00');
+  return dt.toLocaleDateString('pt-PT',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+}
+
+function seedCatalog(){
+  const services = [
+    {id:uid(),category:'Depilação a Laser',name:'Axilas',type:'avulso',price:1200,packageSessions:0,packagePrice:0,duration:20},
+    {id:uid(),category:'Depilação a Laser',name:'Axilas — Pacote 6 sessões',type:'pacote',price:0,packageSessions:6,packagePrice:6000,duration:20},
+    {id:uid(),category:'Depilação a Laser',name:'Virilha Completa',type:'avulso',price:2200,packageSessions:0,packagePrice:0,duration:30},
+    {id:uid(),category:'Depilação a Laser',name:'Virilha — Pacote 6 sessões',type:'pacote',price:0,packageSessions:6,packagePrice:11000,duration:30},
+    {id:uid(),category:'Depilação a Laser',name:'Pernas Completas',type:'avulso',price:3500,packageSessions:0,packagePrice:0,duration:45},
+    {id:uid(),category:'Depilação a Laser',name:'Pernas Completas — Pacote 6 sessões',type:'pacote',price:0,packageSessions:6,packagePrice:18000,duration:45},
+    {id:uid(),category:'Depilação a Laser',name:'Buço',type:'avulso',price:700,packageSessions:0,packagePrice:0,duration:10},
+    {id:uid(),category:'Microagulhamento',name:'Facial — Sessão única',type:'avulso',price:2800,packageSessions:0,packagePrice:0,duration:60},
+    {id:uid(),category:'Microagulhamento',name:'Facial — Pacote 3 sessões',type:'pacote',price:0,packageSessions:3,packagePrice:7500,duration:60},
+    {id:uid(),category:'Limpeza de Pele',name:'Limpeza Simples',type:'avulso',price:1500,packageSessions:0,packagePrice:0,duration:45},
+    {id:uid(),category:'Limpeza de Pele',name:'Limpeza Profunda',type:'avulso',price:2200,packageSessions:0,packagePrice:0,duration:60},
+  ];
+  const products = [
+    {id:uid(),category:'Pele',name:'Sérum Vitamina C 30ml',price:1450,cost:800,stock:0,minStock:5,unit:'un'},
+    {id:uid(),category:'Pele',name:'Protetor Solar FPS50',price:980,cost:520,stock:0,minStock:8,unit:'un'},
+    {id:uid(),category:'Pele',name:'Creme Hidratante Facial',price:850,cost:430,stock:0,minStock:6,unit:'un'},
+    {id:uid(),category:'Cabelo',name:'Óleo Capilar Reparador',price:690,cost:340,stock:0,minStock:6,unit:'un'},
+    {id:uid(),category:'Cabelo',name:'Shampoo Anticaspa 400ml',price:520,cost:260,stock:0,minStock:6,unit:'un'},
+    {id:uid(),category:'Corpo',name:'Loção Corporal Manteiga de Karité',price:610,cost:300,stock:0,minStock:6,unit:'un'},
+    {id:uid(),category:'Corpo',name:'Esfoliante Corporal 250g',price:540,cost:270,stock:0,minStock:5,unit:'un'},
+    {id:uid(),category:'Suplementação',name:'Colágeno Hidrolisado 300g',price:1650,cost:950,stock:0,minStock:4,unit:'un'},
+    {id:uid(),category:'Suplementação',name:'Multivitamínico Pele & Cabelo',price:980,cost:520,stock:0,minStock:5,unit:'un'},
+  ];
+  return {services, products};
+}
+/* Builds a real, empty operational database — no fake clients, staff, or
+   sales. The service/product catalog is pre-filled with RNW's actual menu
+   (editable) so the owner isn't starting from a blank list, but every
+   transactional record starts genuinely empty. */
+function bootstrapDB(company, admin){
+  const {services, products} = seedCatalog();
+  return {
+    clients: [], professionals: [], services, products, clientPackages: [],
+    appointments: [], sales: [], stockMovements: [], expenses: [], cashSessions: [],
+    suppliers: [], serviceCategories: [...SERVICE_CATS_DEFAULT],
+    users: [{id:uid(), name:admin.name, role:'Administrador', pin:admin.pin}],
+    settings: {
+      companyName: company.name || 'RENW Skin Renewal',
+      nextInvoice: 1,
+      address: company.address || '',
+      phone: company.phone || '',
+      nuit: company.nuit || '',
+      ivaRate: 16, irpcRate: 32,
+    },
+  };
+}
+
+let DB = null;
+function load(){
+  try{
+    const raw = localStorage.getItem(DB_KEY);
+    if(raw){ return migrate(JSON.parse(raw)); }
+  }catch(e){}
+  return null; // no data yet — first run needs setup
+}
+function migrate(db){
+  db.expenses = db.expenses || [];
+  db.suppliers = db.suppliers || [];
+  db.serviceCategories = db.serviceCategories && db.serviceCategories.length ? db.serviceCategories : [...SERVICE_CATS_DEFAULT];
+  db.settings.nuit = db.settings.nuit || '';
+  db.settings.ivaRate = db.settings.ivaRate!=null ? db.settings.ivaRate : 16;
+  db.settings.irpcRate = db.settings.irpcRate!=null ? db.settings.irpcRate : 32;
+  db.users.forEach(u=>{ if(!u.id) u.id = uid(); });
+  db.clients.forEach(c=>{ if(c.special==null) c.special = false; if(c.superClient==null) c.superClient = false; });
+  db.stockMovements.forEach(m=>{ if(m.supplierId===undefined) m.supplierId = null; });
+  db.sales.forEach(s=>{ if(!s.installments) s.installments = []; });
+  return db;
+}
+function save(){ localStorage.setItem(DB_KEY, JSON.stringify(DB)); scheduleFirebaseSave(); }
+
+/* ---------- toast ---------- */
+function toast(msg,type='good'){
+  const wrap = document.getElementById('toast-wrap');
+  const el = document.createElement('div');
+  el.className = 'toast '+type;
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(()=>el.remove(),2800);
+}
+
+/* ---------- modal ---------- */
+function openModal(title, bodyHtml, footHtml, wide=false){
+  const overlay = document.getElementById('overlay');
+  const modal = document.getElementById('modal-el');
+  modal.className = 'modal' + (wide?' wide':'');
+  modal.innerHTML = `
+    <div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+    <div class="modal-body">${bodyHtml}</div>
+    ${footHtml? `<div class="modal-foot">${footHtml}</div>`:''}
+  `;
+  overlay.classList.add('show');
+}
+function closeModal(){ document.getElementById('overlay').classList.remove('show'); }
+document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeModal(); });
+
+/* ---------- confirm ---------- */
+let _confirmCb = null;
+function confirmAction(msg, cb){
+  _confirmCb = cb;
+  openModal('Confirmar', `<p style="font-size:13.5px;color:var(--ink-soft);margin:0;">${msg}</p>`,
+    `<button class="btn" onclick="_confirmCb=null;closeModal();">Cancelar</button>
+     <button class="btn btn-danger" style="border-color:var(--bad)" onclick="runConfirm();">Confirmar</button>`);
+}
+function runConfirm(){
+  const cb = _confirmCb; _confirmCb = null;
+  closeModal();
+  if(cb) cb();
+}
+
+/* =========================================================================
+   AUTH
+   ========================================================================= */
+let session = null;
+let selectedRole = null;
+let pinBuf = '';
+
+function initLogin(){
+  const roles = [...new Set(DB.users.map(u=>u.role))];
+  selectedRole = roles[0];
+  const grid = document.getElementById('role-grid');
+  grid.innerHTML = roles.map(r=>`<button class="role-btn ${r===selectedRole?'active':''}" data-role="${r}">${r}</button>`).join('');
+  grid.querySelectorAll('.role-btn').forEach(b=>b.addEventListener('click',()=>{
+    selectedRole=b.dataset.role;
+    grid.querySelectorAll('.role-btn').forEach(x=>x.classList.toggle('active',x===b));
+    pinBuf=''; renderPinDots(); document.getElementById('login-err').textContent='';
+  }));
+  renderPinDots();
+  const keypad = document.getElementById('keypad');
+  const keys = ['1','2','3','4','5','6','7','8','9','⌫','0','OK'];
+  keypad.innerHTML = keys.map(k=>`<button class="${k.length>1?'wide':''}" data-k="${k}">${k}</button>`).join('');
+  keypad.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>onKey(b.dataset.k)));
+}
+function renderPinDots(){
+  document.getElementById('pin-dots').innerHTML = [0,1,2,3].map(i=>`<div class="pin-dot ${i<pinBuf.length?'filled':''}"></div>`).join('');
+}
+function onKey(k){
+  const err = document.getElementById('login-err');
+  if(k==='⌫'){ pinBuf = pinBuf.slice(0,-1); err.textContent=''; renderPinDots(); return; }
+  if(k==='OK'){ tryLogin(); return; }
+  if(pinBuf.length<4){ pinBuf += k; renderPinDots(); }
+  if(pinBuf.length===4) tryLogin();
+}
+function tryLogin(){
+  const user = DB.users.find(u=>u.role===selectedRole && u.pin===pinBuf);
+  const err = document.getElementById('login-err');
+  if(!user){ err.textContent='PIN incorreto. Tente novamente.'; pinBuf=''; renderPinDots(); return; }
+  session = user;
+  document.getElementById('login-screen').style.display='none';
+  document.getElementById('app').classList.add('show');
+  document.getElementById('side-user-name').textContent = user.name+' · '+user.role;
+  buildNav();
+  navigate('dashboard');
+}
+function logout(){
+  session=null; pinBuf=''; 
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('login-screen').style.display='flex';
+  initLogin();
+}
+
+/* =========================================================================
+   NAV / ROUTER
+   ========================================================================= */
+let currentPage = 'dashboard';
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-backdrop').classList.toggle('show');
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-backdrop').classList.remove('show');
+}
+function buildNav(){
+  const nav = document.getElementById('nav-list');
+  const allowed = allowedPages();
+  nav.innerHTML = NAV.map(item=>{
+    if(item.group) return `<div class="nav-group-label">${item.group}</div>`;
+    if(!allowed.includes(item.id)) return '';
+    return `<div class="nav-item" data-page="${item.id}"><span>${ic(item.icon)}</span><span>${item.label}</span></div>`;
+  }).join('');
+  // strip group labels that end up with no items under them
+  nav.querySelectorAll('.nav-group-label').forEach(lbl=>{
+    let sib = lbl.nextElementSibling, hasItem=false;
+    while(sib && !sib.classList.contains('nav-group-label')){ if(sib.classList.contains('nav-item')) hasItem=true; sib = sib.nextElementSibling; }
+    if(!hasItem) lbl.remove();
+  });
+  nav.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',()=>{
+    navigate(el.dataset.page);
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-backdrop').classList.remove('show');
+  }));
+}
+const PAGE_TITLES = {dashboard:'Painel',agenda:'Agenda',vendas:'Vendas / Ponto de Venda',caixa:'Caixa',clientes:'Clientes',servicos:'Serviços',produtos:'Produtos',estoque:'Estoque',profissionais:'Profissionais',relatorios:'Relatórios',contabilidade:'Contabilidade',usuarios:'Utilizadores',config:'Configurações'};
+const RENDERERS = {};
+function navigate(page){
+  if(!canAccess(page)){ page = 'dashboard'; }
+  currentPage = page;
+  document.querySelectorAll('.nav-item').forEach(el=>el.classList.toggle('active', el.dataset.page===page));
+  document.getElementById('page-title').textContent = PAGE_TITLES[page]||'';
+  document.getElementById('today-date').textContent = fmtDateLong(today());
+  updateCashBadge();
+  const container = document.getElementById('page-content');
+  container.innerHTML = '';
+  (RENDERERS[page]||function(){container.innerHTML='<p>Página não encontrada.</p>';})(container);
+}
+function updateCashBadge(){
+  const badge = document.getElementById('cash-badge');
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  if(openSession){
+    badge.className='cash-badge open';
+    badge.innerHTML = `<span class="dot"></span><span class="label">Caixa aberto</span>`;
+  } else {
+    badge.className='cash-badge closed';
+    badge.innerHTML = `<span class="dot"></span><span class="label">Caixa fechado</span>`;
+  }
+}
+
+/* =========================================================================
+   HELPERS: lookups
+   ========================================================================= */
+function clientName(id){ const c=DB.clients.find(x=>x.id===id); return c? c.name : '—'; }
+function profName(id){ const p=DB.professionals.find(x=>x.id===id); return p? p.name : '—'; }
+function serviceById(id){ return DB.services.find(x=>x.id===id); }
+function productById(id){ return DB.products.find(x=>x.id===id); }
+const STATUS_LABELS = {agendado:'Agendado',confirmado:'Confirmado',concluido:'Concluído',cancelado:'Cancelado'};
+const STATUS_TAG = {agendado:'tag-neutral',confirmado:'tag-warn',concluido:'tag-good',cancelado:'tag-bad'};
+
+/* =========================================================================
+   DASHBOARD
+   ========================================================================= */
+RENDERERS.dashboard = function(el){
+  const t = today();
+  const admin = isAdmin();
+  const showStock = session && (session.role==='Administrador' || session.role==='Recepção');
+  const salesToday = DB.sales.filter(s=>s.date===t);
+  const revenueToday = salesToday.reduce((a,s)=>a+s.total,0);
+  const apptsToday = DB.appointments.filter(a=>a.date===t);
+  const apptsDone = apptsToday.filter(a=>a.status==='concluido').length;
+  const lowStock = DB.products.filter(p=>p.stock<=p.minStock);
+  const activePkgs = DB.clientPackages.filter(p=>p.usedSessions<p.totalSessions).length;
+  const birthdaysSoon = DB.clients
+    .filter(c=>c.birthday)
+    .map(c=>({c, days:daysUntilBirthday(c.birthday)}))
+    .filter(x=>x.days!=null && x.days<=7)
+    .sort((a,b)=>a.days-b.days);
+
+  const kpis = [];
+  if(admin) kpis.push(`<div class="kpi-card"><div class="label">Faturação de hoje</div><div class="value">${fmt(revenueToday)}</div><div class="sub">${salesToday.length} venda(s)</div></div>`);
+  kpis.push(`<div class="kpi-card"><div class="label">Agendamentos hoje</div><div class="value">${apptsToday.length}</div><div class="sub">${apptsDone} concluído(s)</div></div>`);
+  if(session && session.role!=='Esteticista') kpis.push(`<div class="kpi-card"><div class="label">Pacotes ativos</div><div class="value">${activePkgs}</div><div class="sub">sessões por utilizar</div></div>`);
+  if(showStock) kpis.push(`<div class="kpi-card"><div class="label">Alertas de estoque</div><div class="value" style="color:${lowStock.length?'var(--bad)':'var(--ink)'}">${lowStock.length}</div><div class="sub">produto(s) em nível baixo</div></div>`);
+
+  el.innerHTML = `
+    <div class="grid-kpi">${kpis.join('')}</div>
+
+    ${birthdaysSoon.length? `
+    <div class="section-head"><h2>🎂 Aniversários próximos</h2></div>
+    <div class="table-wrap" style="margin-bottom:24px;">
+      <table><thead><tr><th>Cliente</th><th>Data</th><th>Contacto</th><th></th></tr></thead>
+      <tbody>
+        ${birthdaysSoon.map(({c,days})=>`<tr>
+          <td><strong>${c.name}</strong></td>
+          <td>${fmtDate(c.birthday).slice(0,5)}</td>
+          <td>${c.phone||'—'}</td>
+          <td>${days===0?`<span class="tag tag-good">Hoje!</span>`:`<span class="tag tag-neutral">em ${days} dia${days===1?'':'s'}</span>`}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>` : ''}
+
+    <div class="section-head"><h2>Agenda de hoje</h2><div class="actions"><button class="btn btn-bronze" onclick="openAppointmentModal()">${ic('plus',14)} Novo agendamento</button></div></div>
+    <div class="table-wrap" style="margin-bottom:24px;">
+      <table><thead><tr><th>Hora</th><th>Cliente</th><th>Serviço</th><th>Profissional</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${apptsToday.sort((a,b)=>a.time.localeCompare(b.time)).map(a=>{
+          const s = serviceById(a.serviceId);
+          return `<tr>
+            <td><strong>${a.time}</strong></td>
+            <td>${clientName(a.clientId)}</td>
+            <td>${s?s.name:'—'}</td>
+            <td>${profName(a.professionalId)}</td>
+            <td><span class="tag ${STATUS_TAG[a.status]}">${STATUS_LABELS[a.status]}</span></td>
+            <td><button class="btn btn-sm" onclick="openAppointmentModal('${a.id}')">${ic('edit',13)}</button></td>
+          </tr>`;
+        }).join('') || `<tr class="empty-row"><td colspan="6">Sem agendamentos para hoje.</td></tr>`}
+      </tbody></table>
+    </div>
+
+    ${showStock? `
+    <div class="section-head"><h2>Estoque baixo</h2></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Produto</th><th>Categoria</th><th>Stock</th><th>Mínimo</th></tr></thead>
+      <tbody>
+        ${lowStock.map(p=>`<tr><td>${p.name}</td><td>${p.category}</td><td style="color:var(--bad);font-weight:700;">${p.stock} ${p.unit}</td><td>${p.minStock} ${p.unit}</td></tr>`).join('') || `<tr class="empty-row"><td colspan="4">Nenhum produto em nível crítico.</td></tr>`}
+      </tbody></table>
+    </div>` : ''}
+  `;
+};
+function daysUntilBirthday(birthdayStr){
+  if(!birthdayStr) return null;
+  const now = new Date(); now.setHours(0,0,0,0);
+  const bd = new Date(birthdayStr+'T00:00:00');
+  if(isNaN(bd.getTime())) return null;
+  let next = new Date(now.getFullYear(), bd.getMonth(), bd.getDate());
+  next.setHours(0,0,0,0);
+  if(next < now) next = new Date(now.getFullYear()+1, bd.getMonth(), bd.getDate());
+  return Math.round((next-now)/86400000);
+}
+
+/* =========================================================================
+   AGENDA
+   ========================================================================= */
+let agendaDate = today();
+RENDERERS.agenda = function(el){
+  const appts = DB.appointments.filter(a=>a.date===agendaDate).sort((a,b)=>a.time.localeCompare(b.time));
+  el.innerHTML = `
+    <div class="section-head">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <input type="date" value="${agendaDate}" class="field" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;" onchange="agendaDate=this.value;navigate('agenda')">
+        <span style="font-size:13px;color:var(--ink-soft);text-transform:capitalize;">${fmtDateLong(agendaDate)}</span>
+      </div>
+      <div class="actions"><button class="btn btn-bronze" onclick="openAppointmentModal()">${ic('plus',14)} Novo agendamento</button></div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Hora</th><th>Cliente</th><th>Serviço</th><th>Categoria</th><th>Profissional</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${appts.map(a=>{
+          const s = serviceById(a.serviceId);
+          return `<tr>
+            <td><strong>${a.time}</strong></td>
+            <td>${clientName(a.clientId)}</td>
+            <td>${s?s.name:'—'}</td>
+            <td>${s?s.category:'—'}</td>
+            <td>${profName(a.professionalId)}</td>
+            <td><span class="tag ${STATUS_TAG[a.status]}">${STATUS_LABELS[a.status]}</span></td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-sm" onclick="openAppointmentModal('${a.id}')">${ic('edit',13)}</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteAppointment('${a.id}')">${ic('trash',13)}</button>
+            </td>
+          </tr>`;
+        }).join('') || `<tr class="empty-row"><td colspan="7">Sem agendamentos nesta data.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+
+function openAppointmentModal(id){
+  const appt = id ? DB.appointments.find(a=>a.id===id) : null;
+  const clientOpts = DB.clients.map(c=>`<option value="${c.id}" ${appt&&appt.clientId===c.id?'selected':''}>${c.name}</option>`).join('');
+  const serviceOpts = DB.services.map(s=>`<option value="${s.id}" ${appt&&appt.serviceId===s.id?'selected':''}>${s.category} — ${s.name}</option>`).join('');
+  const profOpts = DB.professionals.filter(p=>p.active).map(p=>`<option value="${p.id}" ${appt&&appt.professionalId===p.id?'selected':''}>${p.name}</option>`).join('');
+  const statusOpts = Object.keys(STATUS_LABELS).map(k=>`<option value="${k}" ${appt&&appt.status===k?'selected':''}>${STATUS_LABELS[k]}</option>`).join('');
+
+  openModal(appt?'Editar agendamento':'Novo agendamento', `
+    <div class="field"><label>Cliente</label><select id="f-client">${clientOpts}</select></div>
+    <div class="field"><label>Serviço</label><select id="f-service">${serviceOpts}</select></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Data</label><input type="date" id="f-date" value="${appt?appt.date:agendaDate}"></div>
+      <div class="field"><label>Hora</label><input type="time" id="f-time" value="${appt?appt.time:'09:00'}"></div>
+    </div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Profissional</label><select id="f-prof">${profOpts}</select></div>
+      <div class="field"><label>Estado</label><select id="f-status">${statusOpts}</select></div>
+    </div>
+    <div class="field"><label>Notas</label><textarea id="f-notes" rows="2">${appt?appt.notes||'':''}</textarea></div>
+  `, `
+    ${appt? `<button class="btn btn-danger" onclick="deleteAppointment('${appt.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveAppointment(${appt?`'${appt.id}'`:'null'})">Guardar</button>
+  `);
+}
+function saveAppointment(id){
+  const data = {
+    clientId: document.getElementById('f-client').value,
+    serviceId: document.getElementById('f-service').value,
+    date: document.getElementById('f-date').value,
+    time: document.getElementById('f-time').value,
+    professionalId: document.getElementById('f-prof').value,
+    status: document.getElementById('f-status').value,
+    notes: document.getElementById('f-notes').value,
+  };
+  if(id){
+    Object.assign(DB.appointments.find(a=>a.id===id), data);
+    toast('Agendamento atualizado.');
+  } else {
+    DB.appointments.push({id:uid(), linkedPackageId:null, ...data});
+    toast('Agendamento criado.');
+  }
+  save(); closeModal(); navigate(currentPage);
+}
+function deleteAppointment(id){
+  DB.appointments = DB.appointments.filter(a=>a.id!==id);
+  save(); toast('Agendamento eliminado.','bad'); navigate(currentPage);
+}
+
+/* =========================================================================
+   CLIENTES
+   ========================================================================= */
+let clienteSearch = '';
+RENDERERS.clientes = function(el){
+  const admin = isAdmin();
+  const list = DB.clients.filter(c=> c.name.toLowerCase().includes(clienteSearch.toLowerCase()) || (c.phone||'').includes(clienteSearch));
+  el.innerHTML = `
+    <div class="section-head">
+      <div class="search-box">${ic('search',14)}<input placeholder="Pesquisar cliente..." value="${clienteSearch}" oninput="clienteSearch=this.value;navigate('clientes')"></div>
+      <div class="actions"><button class="btn btn-bronze" onclick="openClientModal()">${ic('plus',14)} Novo cliente</button></div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nome</th><th>Telefone</th><th>Email</th><th>Pacotes ativos</th><th>Cliente desde</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(c=>{
+          const pkgs = DB.clientPackages.filter(p=>p.clientId===c.id && p.usedSessions<p.totalSessions);
+          return `<tr>
+            <td><strong>${c.name}</strong>${c.special?` <span class="tag tag-warn">Especial</span>`:''}${c.superClient?` <span class="tag tag-good">Super Cliente</span>`:''}${c.notes?`<div style="font-size:11px;color:var(--ink-soft);">${c.notes}</div>`:''}</td>
+            <td>${c.phone||'—'}</td>
+            <td>${c.email||'—'}</td>
+            <td>${pkgs.length? `<span class="tag tag-good">${pkgs.length} pacote(s)</span>` : '—'}</td>
+            <td>${fmtDate(c.createdAt)}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-sm" onclick="openClientProfile('${c.id}')">Perfil</button>
+              ${admin? `<button class="btn btn-sm" onclick="openClientModal('${c.id}')">${ic('edit',13)}</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteClient('${c.id}')">${ic('trash',13)}</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum cliente encontrado.</td></tr>`}
+      </tbody></table>
+    </div>
+    ${admin? '' : `<p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">Apenas o Administrador pode editar ou eliminar clientes já registados.</p>`}
+  `;
+};
+function openClientModal(id){
+  if(id && !isAdmin()){ toast('Apenas o Administrador pode editar clientes.','bad'); return; }
+  const c = id ? DB.clients.find(x=>x.id===id) : null;
+  openModal(c?'Editar cliente':'Novo cliente', `
+    <div class="field"><label>Nome completo</label><input id="f-name" value="${c?c.name:''}"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Telefone</label><input id="f-phone" value="${c?c.phone||'':''}"></div>
+      <div class="field"><label>Email</label><input id="f-email" value="${c?c.email||'':''}"></div>
+    </div>
+    <div class="field"><label>Data de aniversário (opcional)</label><input type="date" id="f-birthday" value="${c?c.birthday||'':''}"></div>
+    <div class="field"><label>Notas (alergias, preferências, etc.)</label><textarea id="f-notes" rows="2">${c?c.notes||'':''}</textarea></div>
+    ${isAdmin()? `<div class="field"><label><input type="checkbox" id="f-special" ${c&&c.special?'checked':''}> Cliente especial (preço aberto na venda de produtos, só o Administrador pode vender)</label></div>` : ''}
+    ${isAdmin()? `<div class="field"><label><input type="checkbox" id="f-superclient" ${c&&c.superClient?'checked':''}> Super Cliente (facilidades de pagamento: pode levar produtos a crédito, preços e descontos definidos pelo Administrador)</label></div>` : ''}
+  `, `
+    ${c && isAdmin()? `<button class="btn btn-danger" onclick="deleteClient('${c.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveClient(${c?`'${c.id}'`:'null'})">Guardar</button>
+  `);
+}
+function saveClient(id){
+  if(id && !isAdmin()){ toast('Apenas o Administrador pode editar clientes.','bad'); return; }
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ toast('Indique o nome do cliente.','bad'); return; }
+  const specialEl = document.getElementById('f-special');
+  const superEl = document.getElementById('f-superclient');
+  const data = {name, phone:document.getElementById('f-phone').value.trim(), email:document.getElementById('f-email').value.trim(), birthday:document.getElementById('f-birthday').value||'', notes:document.getElementById('f-notes').value.trim()};
+  if(specialEl) data.special = specialEl.checked;
+  if(superEl) data.superClient = superEl.checked;
+  if(id){ Object.assign(DB.clients.find(c=>c.id===id), data); toast('Cliente atualizado.'); }
+  else { DB.clients.push({id:uid(), createdAt:today(), special:false, superClient:false, ...data}); toast('Cliente criado.'); }
+  save(); closeModal(); navigate('clientes');
+}
+function deleteClient(id){
+  if(!isAdmin()){ toast('Apenas o Administrador pode eliminar clientes.','bad'); return; }
+  const hasHistory = DB.appointments.some(a=>a.clientId===id) || DB.sales.some(s=>s.clientId===id) || DB.clientPackages.some(p=>p.clientId===id);
+  const msg = hasHistory
+    ? 'Este cliente tem marcações, vendas ou pacotes associados. O histórico existente não será apagado, mas deixará de estar ligado a um nome de cliente. Eliminar mesmo assim?'
+    : 'Eliminar este cliente?';
+  confirmAction(msg, ()=>{
+    DB.clients = DB.clients.filter(c=>c.id!==id);
+    save(); toast('Cliente eliminado.','bad'); navigate('clientes');
+  });
+}
+function openClientProfile(id){
+  const c = DB.clients.find(x=>x.id===id);
+  const pkgs = DB.clientPackages.filter(p=>p.clientId===id);
+  const history = DB.appointments.filter(a=>a.clientId===id).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  const salesHist = DB.sales.filter(s=>s.clientId===id);
+  const spent = salesHist.reduce((a,s)=>a+s.total,0);
+  const creditBalance = salesHist.filter(s=>s.paymentMethod==='Crédito (Super Cliente)')
+    .reduce((a,s)=>a+(s.installments||[]).filter(i=>i.status==='pendente').reduce((x,i)=>x+i.amount,0),0);
+  openModal('Perfil — '+c.name+(c.superClient?' ♦':'')+(c.special?' ★':''), `
+    <div class="field-row cols-2" style="margin-bottom:16px;">
+      <div class="panel" style="margin-bottom:0;padding:12px 14px;"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">TOTAL GASTO</div><div style="font-family:'Fraunces',serif;font-size:19px;font-weight:600;">${fmt(spent)}</div></div>
+      <div class="panel" style="margin-bottom:0;padding:12px 14px;"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">CONTACTO</div><div style="font-size:13px;">${c.phone||'—'}</div>${c.birthday?`<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">🎂 ${fmtDate(c.birthday)}</div>`:''}</div>
+    </div>
+    ${c.superClient? `<div class="panel" style="margin-bottom:16px;padding:12px 14px;border-color:${creditBalance>0?'var(--warn)':'var(--line)'};"><div style="font-size:11px;color:var(--ink-soft);font-weight:700;">SALDO EM CRÉDITO (SUPER CLIENTE)</div><div style="font-family:'Fraunces',serif;font-size:19px;font-weight:600;color:${creditBalance>0?'var(--warn)':'var(--ink)'};">${fmt(creditBalance)}</div></div>` : ''}
+    <h3 style="font-size:13.5px;margin:0 0 8px;">Pacotes</h3>
+    ${pkgs.length? pkgs.map(p=>`
+      <div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px;"><span>${p.serviceName}</span><span>${p.usedSessions}/${p.totalSessions} sessões</span></div>
+        <div class="progress-bar"><div style="width:${Math.min(100,p.usedSessions/p.totalSessions*100)}%"></div></div>
+      </div>`).join('') : `<p style="font-size:12.5px;color:var(--ink-soft);">Sem pacotes.</p>`}
+    <h3 style="font-size:13.5px;margin:16px 0 8px;">Histórico de marcações</h3>
+    <div style="max-height:180px;overflow-y:auto;">
+    ${history.length? history.map(a=>{
+      const s=serviceById(a.serviceId);
+      return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:1px solid var(--line);">
+        <span>${fmtDate(a.date)} ${a.time} — ${s?s.name:''}</span><span class="tag ${STATUS_TAG[a.status]}">${STATUS_LABELS[a.status]}</span></div>`;
+    }).join('') : `<p style="font-size:12.5px;color:var(--ink-soft);">Sem histórico.</p>`}
+    </div>
+  `, `<button class="btn" onclick="closeModal()">Fechar</button>${isAdmin()?`<button class="btn btn-primary" onclick="closeModal();openClientModal('${c.id}')">Editar dados</button>`:''}`, true);
+}
+
+/* =========================================================================
+   SERVIÇOS
+   ========================================================================= */
+let servicoCat = 'Todos';
+RENDERERS.servicos = function(el){
+  const cats = ['Todos', ...serviceCats()];
+  const list = DB.services.filter(s=> servicoCat==='Todos' || s.category===servicoCat);
+  el.innerHTML = `
+    <div class="pill-tabs">${cats.map(c=>`<button class="pill-tab ${c===servicoCat?'active':''}" onclick="servicoCat='${c}';navigate('servicos')">${c}</button>`).join('')}</div>
+    <div class="section-head"><div></div><div class="actions"><button class="btn" onclick="openCategoryModal()">${ic('layers',14)} Gerir categorias</button><button class="btn btn-bronze" onclick="openServiceModal()">${ic('plus',14)} Novo serviço</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Serviço</th><th>Categoria</th><th>Tipo</th><th>Duração</th><th>Preço</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(s=>`<tr>
+          <td><strong>${s.name}</strong></td>
+          <td>${s.category}</td>
+          <td><span class="tag ${s.type==='pacote'?'tag-warn':'tag-neutral'}">${s.type==='pacote'?'Pacote · '+s.packageSessions+'x':'Avulso'}</span></td>
+          <td>${s.duration} min</td>
+          <td><strong>${fmt(s.type==='pacote'?s.packagePrice:s.price)}</strong></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openServiceModal('${s.id}')">${ic('edit',13)}</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteService('${s.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Nenhum serviço nesta categoria.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function openServiceModal(id){
+  const s = id ? DB.services.find(x=>x.id===id) : null;
+  openModal(s?'Editar serviço':'Novo serviço', `
+    <div class="field"><label>Nome</label><input id="f-name" value="${s?s.name:''}"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Categoria</label><select id="f-cat">${serviceCats().map(c=>`<option ${s&&s.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Tipo</label><select id="f-type" onchange="toggleServiceType()">
+        <option value="avulso" ${s&&s.type==='avulso'?'selected':''}>Sessão avulsa</option>
+        <option value="pacote" ${s&&s.type==='pacote'?'selected':''}>Pacote de sessões</option>
+      </select></div>
+    </div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Duração (min)</label><input type="number" id="f-duration" value="${s?s.duration:30}"></div>
+      <div class="field" id="f-avulso-wrap" style="display:${(!s||s.type==='avulso')?'block':'none'}"><label>Preço avulso</label><input type="number" id="f-price" value="${s?s.price:0}"></div>
+    </div>
+    <div id="f-pacote-wrap" style="display:${s&&s.type==='pacote'?'grid':'none'};grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="field"><label>Nº de sessões</label><input type="number" id="f-sessions" value="${s?s.packageSessions:6}"></div>
+      <div class="field"><label>Preço do pacote</label><input type="number" id="f-packageprice" value="${s?s.packagePrice:0}"></div>
+    </div>
+  `, `
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveService(${s?`'${s.id}'`:'null'})">Guardar</button>
+  `);
+}
+function toggleServiceType(){
+  const t = document.getElementById('f-type').value;
+  document.getElementById('f-avulso-wrap').style.display = t==='avulso'?'block':'none';
+  document.getElementById('f-pacote-wrap').style.display = t==='pacote'?'grid':'none';
+}
+function saveService(id){
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ toast('Indique o nome do serviço.','bad'); return; }
+  const type = document.getElementById('f-type').value;
+  const data = {
+    name, category:document.getElementById('f-cat').value, type,
+    duration:Number(document.getElementById('f-duration').value)||0,
+    price: type==='avulso'? Number(document.getElementById('f-price').value)||0 : 0,
+    packageSessions: type==='pacote'? Number(document.getElementById('f-sessions').value)||0 : 0,
+    packagePrice: type==='pacote'? Number(document.getElementById('f-packageprice').value)||0 : 0,
+  };
+  if(id){ Object.assign(DB.services.find(s=>s.id===id), data); toast('Serviço atualizado.'); }
+  else { DB.services.push({id:uid(), ...data}); toast('Serviço criado.'); }
+  save(); closeModal(); navigate('servicos');
+}
+function deleteService(id){
+  confirmAction('Eliminar este serviço do catálogo?', ()=>{
+    DB.services = DB.services.filter(s=>s.id!==id); save(); toast('Serviço eliminado.','bad'); navigate('servicos');
+  });
+}
+
+function openCategoryModal(){
+  openModal('Gerir categorias de serviço', `
+    <div id="cat-list">${renderCategoryList()}</div>
+    <div class="field" style="margin-top:14px;"><label>Nova categoria</label>
+      <div style="display:flex;gap:8px;">
+        <input id="f-newcat" placeholder="Ex: Massagem Relaxante" style="flex:1;">
+        <button class="btn btn-primary" onclick="addCategory()">Adicionar</button>
+      </div>
+    </div>
+  `, `<button class="btn" onclick="closeModal();navigate('servicos')">Fechar</button>`, true);
+}
+function renderCategoryList(){
+  return serviceCats().map(cat=>{
+    const count = DB.services.filter(s=>s.category===cat).length;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line);">
+      <input value="${cat}" id="cat-input-${btoa(unescape(encodeURIComponent(cat)))}" style="flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:6px;font-size:12.5px;">
+      <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;">${count} serviço(s)</span>
+      <button class="btn btn-sm" onclick="renameCategory('${cat.replace(/'/g,"\\'")}')">Guardar</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteCategory('${cat.replace(/'/g,"\\'")}')">${ic('trash',13)}</button>
+    </div>`;
+  }).join('');
+}
+function addCategory(){
+  const input = document.getElementById('f-newcat');
+  const name = input.value.trim();
+  if(!name){ toast('Indique um nome para a categoria.','bad'); return; }
+  if(serviceCats().includes(name)){ toast('Já existe uma categoria com esse nome.','bad'); return; }
+  DB.serviceCategories = [...serviceCats(), name];
+  save(); toast('Categoria adicionada.');
+  document.getElementById('cat-list').innerHTML = renderCategoryList();
+  input.value = '';
+}
+function renameCategory(oldName){
+  const inputId = 'cat-input-'+btoa(unescape(encodeURIComponent(oldName)));
+  const newName = document.getElementById(inputId).value.trim();
+  if(!newName){ toast('O nome não pode ficar vazio.','bad'); return; }
+  if(newName!==oldName && serviceCats().includes(newName)){ toast('Já existe uma categoria com esse nome.','bad'); return; }
+  DB.serviceCategories = serviceCats().map(c=>c===oldName?newName:c);
+  DB.services.forEach(s=>{ if(s.category===oldName) s.category = newName; });
+  save(); toast('Categoria atualizada.');
+  document.getElementById('cat-list').innerHTML = renderCategoryList();
+}
+function deleteCategory(name){
+  const count = DB.services.filter(s=>s.category===name).length;
+  if(serviceCats().length<=1){ toast('Tem de existir pelo menos uma categoria.','bad'); return; }
+  const msg = count>0
+    ? `Esta categoria tem ${count} serviço(s) associado(s), que ficarão sem categoria válida. Elimine ou reclassifique esses serviços primeiro, ou continue mesmo assim?`
+    : 'Eliminar esta categoria?';
+  confirmAction(msg, ()=>{
+    DB.serviceCategories = serviceCats().filter(c=>c!==name);
+    save(); toast('Categoria eliminada.','bad');
+    if(servicoCat===name) servicoCat = 'Todos';
+    document.getElementById('cat-list').innerHTML = renderCategoryList();
+    navigate('servicos');
+  });
+}
+
+/* =========================================================================
+   PRODUTOS
+   ========================================================================= */
+let produtoCat = 'Todos';
+RENDERERS.produtos = function(el){
+  const cats = ['Todos', ...PRODUCT_CATS];
+  const list = DB.products.filter(p=> produtoCat==='Todos' || p.category===produtoCat);
+  el.innerHTML = `
+    <div class="pill-tabs">${cats.map(c=>`<button class="pill-tab ${c===produtoCat?'active':''}" onclick="produtoCat='${c}';navigate('produtos')">${c}</button>`).join('')}</div>
+    <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openProductModal()">${ic('plus',14)} Novo produto</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Produto</th><th>Categoria</th><th>Preço venda</th><th>Custo</th><th>Stock</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(p=>`<tr>
+          <td><strong>${p.name}</strong></td>
+          <td>${p.category}</td>
+          <td><strong>${fmt(p.price)}</strong></td>
+          <td>${fmt(p.cost)}</td>
+          <td>${p.stock<=p.minStock?`<span class="tag tag-bad">${p.stock} ${p.unit}</span>`:`${p.stock} ${p.unit}`}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openProductModal('${p.id}')">${ic('edit',13)}</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteProduct('${p.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Nenhum produto nesta categoria.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function openProductModal(id){
+  const p = id ? DB.products.find(x=>x.id===id) : null;
+  openModal(p?'Editar produto':'Novo produto', `
+    <div class="field"><label>Nome</label><input id="f-name" value="${p?p.name:''}"></div>
+    <div class="field"><label>Categoria</label><select id="f-cat">${PRODUCT_CATS.map(c=>`<option ${p&&p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Preço de venda</label><input type="number" id="f-price" value="${p?p.price:0}"></div>
+      <div class="field"><label>Custo</label><input type="number" id="f-cost" value="${p?p.cost:0}"></div>
+    </div>
+    <div class="field-row cols-3">
+      <div class="field"><label>Stock atual</label><input type="number" id="f-stock" value="${p?p.stock:0}"></div>
+      <div class="field"><label>Stock mínimo</label><input type="number" id="f-minstock" value="${p?p.minStock:5}"></div>
+      <div class="field"><label>Unidade</label><input id="f-unit" value="${p?p.unit:'un'}"></div>
+    </div>
+  `, `
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveProduct(${p?`'${p.id}'`:'null'})">Guardar</button>
+  `);
+}
+function saveProduct(id){
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ toast('Indique o nome do produto.','bad'); return; }
+  const data = {
+    name, category:document.getElementById('f-cat').value,
+    price:Number(document.getElementById('f-price').value)||0,
+    cost:Number(document.getElementById('f-cost').value)||0,
+    stock:Number(document.getElementById('f-stock').value)||0,
+    minStock:Number(document.getElementById('f-minstock').value)||0,
+    unit:document.getElementById('f-unit').value.trim()||'un',
+  };
+  if(id){ Object.assign(DB.products.find(p=>p.id===id), data); toast('Produto atualizado.'); }
+  else { DB.products.push({id:uid(), ...data}); toast('Produto criado.'); }
+  save(); closeModal(); navigate('produtos');
+}
+function deleteProduct(id){
+  confirmAction('Eliminar este produto do catálogo?', ()=>{
+    DB.products = DB.products.filter(p=>p.id!==id); save(); toast('Produto eliminado.','bad'); navigate('produtos');
+  });
+}
+
+/* =========================================================================
+   ESTOQUE
+   ========================================================================= */
+RENDERERS.estoque = function(el){
+  const moves = [...DB.stockMovements].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,40);
+  el.innerHTML = `
+    <div class="section-head"><h2>Níveis de stock</h2><div class="actions"><button class="btn btn-bronze" onclick="openStockMoveModal()">${ic('plus',14)} Movimento de stock</button></div></div>
+    <div class="table-wrap" style="margin-bottom:24px;">
+      <table><thead><tr><th>Produto</th><th>Categoria</th><th>Stock</th><th>Mínimo</th><th>Estado</th></tr></thead>
+      <tbody>
+        ${DB.products.map(p=>`<tr>
+          <td><strong>${p.name}</strong></td><td>${p.category}</td><td>${p.stock} ${p.unit}</td><td>${p.minStock} ${p.unit}</td>
+          <td>${p.stock<=p.minStock?'<span class="tag tag-bad">Repor</span>':'<span class="tag tag-good">OK</span>'}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>
+    <div class="section-head"><h2>Movimentos recentes</h2></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Qtd</th><th>Fornecedor</th><th>Motivo</th></tr></thead>
+      <tbody>
+        ${moves.map(m=>{ const p=productById(m.productId); const sup=DB.suppliers.find(x=>x.id===m.supplierId); return `<tr>
+          <td>${fmtDate(m.date)}</td><td>${p?p.name:'—'}</td>
+          <td><span class="tag ${m.type==='entrada'?'tag-good':(m.type==='saida'?'tag-bad':'tag-neutral')}">${m.type==='entrada'?'Entrada':m.type==='saida'?'Saída':'Ajuste'}</span></td>
+          <td>${m.qty}</td><td>${sup?sup.name:'—'}</td><td>${m.reason||'—'}</td>
+        </tr>`; }).join('') || `<tr class="empty-row"><td colspan="6">Sem movimentos registados.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function openStockMoveModal(){
+  openModal('Movimento de stock', `
+    <div class="field"><label>Produto</label><select id="f-product">${DB.products.map(p=>`<option value="${p.id}">${p.name} (stock: ${p.stock})</option>`).join('')}</select></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Tipo</label><select id="f-type" onchange="toggleStockMoveSupplier()"><option value="entrada">Entrada (reposição)</option><option value="saida">Saída (perda/uso interno)</option><option value="ajuste">Ajuste de inventário</option></select></div>
+      <div class="field"><label>Quantidade</label><input type="number" id="f-qty" value="1"></div>
+    </div>
+    <div class="field" id="f-supplier-wrap"><label>Fornecedor (opcional)</label><select id="f-supplier">
+      <option value="">—</option>
+      ${DB.suppliers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}
+    </select></div>
+    <div class="field"><label>Motivo</label><input id="f-reason" placeholder="Ex: Reposição de fornecedor"></div>
+  `, `<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveStockMove()">Registar</button>`);
+}
+function toggleStockMoveSupplier(){
+  const t = document.getElementById('f-type').value;
+  document.getElementById('f-supplier-wrap').style.display = t==='entrada'?'block':'none';
+}
+function saveStockMove(){
+  const productId = document.getElementById('f-product').value;
+  const type = document.getElementById('f-type').value;
+  const qty = Number(document.getElementById('f-qty').value)||0;
+  const reason = document.getElementById('f-reason').value.trim();
+  const supplierId = (type==='entrada' && document.getElementById('f-supplier').value) || null;
+  const p = productById(productId);
+  if(type==='entrada') p.stock += qty;
+  else if(type==='saida') p.stock = Math.max(0,p.stock-qty);
+  else p.stock = qty;
+  DB.stockMovements.push({id:uid(), productId, type, qty, reason, supplierId, date:today()});
+  save(); closeModal(); toast('Movimento registado.'); navigate('estoque');
+}
+
+/* =========================================================================
+   FORNECEDORES
+   ========================================================================= */
+RENDERERS.fornecedores = function(el){
+  el.innerHTML = `
+    <div class="section-head"><h2>Fornecedores</h2><div class="actions"><button class="btn btn-bronze" onclick="openSupplierModal()">${ic('plus',14)} Novo fornecedor</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nome</th><th>Contacto</th><th>Telefone</th><th>Email</th><th>Produtos fornecidos</th><th></th></tr></thead>
+      <tbody>
+        ${DB.suppliers.map(s=>{
+          const entradas = DB.stockMovements.filter(m=>m.supplierId===s.id && m.type==='entrada');
+          const productIds = [...new Set(entradas.map(m=>m.productId))];
+          return `<tr>
+            <td><strong>${s.name}</strong>${s.notes?`<div style="font-size:11px;color:var(--ink-soft);">${s.notes}</div>`:''}</td>
+            <td>${s.contact||'—'}</td>
+            <td>${s.phone||'—'}</td>
+            <td>${s.email||'—'}</td>
+            <td>${productIds.length? `<span class="tag tag-good">${productIds.length} produto(s)</span>` : '—'}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-sm" onclick="openSupplierModal('${s.id}')">${ic('edit',13)}</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteSupplier('${s.id}')">${ic('trash',13)}</button>
+            </td>
+          </tr>`;
+        }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum fornecedor registado.</td></tr>`}
+      </tbody></table>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">O fornecedor de cada entrada de stock é escolhido no módulo Estoque → Movimento de stock. Assim, o mesmo produto pode ter entradas de fornecedores diferentes ao longo do tempo.</p>
+  `;
+};
+function openSupplierModal(id){
+  const s = id ? DB.suppliers.find(x=>x.id===id) : null;
+  openModal(s?'Editar fornecedor':'Novo fornecedor', `
+    <div class="field"><label>Nome da empresa</label><input id="f-sname" value="${s?s.name:''}"></div>
+    <div class="field"><label>Pessoa de contacto</label><input id="f-scontact" value="${s?s.contact||'':''}"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Telefone</label><input id="f-sphone" value="${s?s.phone||'':''}"></div>
+      <div class="field"><label>Email</label><input id="f-semail" value="${s?s.email||'':''}"></div>
+    </div>
+    <div class="field"><label>Notas</label><textarea id="f-snotes" rows="2">${s?s.notes||'':''}</textarea></div>
+  `, `
+    ${s? `<button class="btn btn-danger" onclick="deleteSupplier('${s.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveSupplier(${s?`'${s.id}'`:'null'})">Guardar</button>
+  `);
+}
+function saveSupplier(id){
+  const name = document.getElementById('f-sname').value.trim();
+  if(!name){ toast('Indique o nome do fornecedor.','bad'); return; }
+  const data = {name, contact:document.getElementById('f-scontact').value.trim(), phone:document.getElementById('f-sphone').value.trim(), email:document.getElementById('f-semail').value.trim(), notes:document.getElementById('f-snotes').value.trim()};
+  if(id){ Object.assign(DB.suppliers.find(s=>s.id===id), data); toast('Fornecedor atualizado.'); }
+  else { DB.suppliers.push({id:uid(), ...data}); toast('Fornecedor criado.'); }
+  save(); closeModal(); navigate('fornecedores');
+}
+function deleteSupplier(id){
+  const hasHistory = DB.stockMovements.some(m=>m.supplierId===id);
+  const msg = hasHistory
+    ? 'Este fornecedor tem entradas de stock associadas. O histórico de movimentos não será apagado, mas deixará de estar ligado a um nome de fornecedor. Eliminar mesmo assim?'
+    : 'Eliminar este fornecedor?';
+  confirmAction(msg, ()=>{
+    DB.suppliers = DB.suppliers.filter(s=>s.id!==id);
+    save(); toast('Fornecedor eliminado.','bad'); navigate('fornecedores');
+  });
+}
+
+/* =========================================================================
+   PROFISSIONAIS
+   ========================================================================= */
+RENDERERS.profissionais = function(el){
+  el.innerHTML = `
+    <div class="section-head"><h2>Equipa</h2><div class="actions"><button class="btn btn-bronze" onclick="openProfModal()">${ic('plus',14)} Novo profissional</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nome</th><th>Função</th><th>Especialidade</th><th>Comissão</th><th>Contacto</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${DB.professionals.map(p=>`<tr>
+          <td><strong>${p.name}</strong></td><td>${p.role}</td><td>${p.specialty||'—'}</td><td>${p.commissionRate}%</td><td>${p.phone||'—'}</td>
+          <td>${p.active?'<span class="tag tag-good">Ativo</span>':'<span class="tag tag-neutral">Inativo</span>'}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openProfModal('${p.id}')">${ic('edit',13)}</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteProf('${p.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="7">Nenhum profissional registado.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function openProfModal(id){
+  const p = id ? DB.professionals.find(x=>x.id===id) : null;
+  openModal(p?'Editar profissional':'Novo profissional', `
+    <div class="field"><label>Nome</label><input id="f-name" value="${p?p.name:''}"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Função</label><input id="f-role" value="${p?p.role:'Esteticista'}"></div>
+      <div class="field"><label>Comissão (%)</label><input type="number" id="f-comm" value="${p?p.commissionRate:10}"></div>
+    </div>
+    <div class="field"><label>Especialidade</label><input id="f-spec" value="${p?p.specialty||'':''}"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Telefone</label><input id="f-phone" value="${p?p.phone||'':''}"></div>
+      <div class="field"><label>Estado</label><select id="f-active"><option value="1" ${!p||p.active?'selected':''}>Ativo</option><option value="0" ${p&&!p.active?'selected':''}>Inativo</option></select></div>
+    </div>
+  `, `
+    ${p? `<button class="btn btn-danger" onclick="deleteProf('${p.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveProf(${p?`'${p.id}'`:'null'})">Guardar</button>
+  `);
+}
+function deleteProf(id){
+  const hasHistory = DB.appointments.some(a=>a.professionalId===id) || DB.sales.some(s=>s.professionalId===id);
+  const msg = hasHistory
+    ? 'Este profissional tem marcações ou vendas associadas. Recomenda-se marcar como "Inativo" em vez de eliminar. Eliminar mesmo assim?'
+    : 'Eliminar este profissional?';
+  confirmAction(msg, ()=>{
+    DB.professionals = DB.professionals.filter(p=>p.id!==id);
+    save(); toast('Profissional eliminado.','bad'); navigate('profissionais');
+  });
+}
+function saveProf(id){
+  const name = document.getElementById('f-name').value.trim();
+  if(!name){ toast('Indique o nome.','bad'); return; }
+  const data = {name, role:document.getElementById('f-role').value.trim(), specialty:document.getElementById('f-spec').value.trim(),
+    commissionRate:Number(document.getElementById('f-comm').value)||0, phone:document.getElementById('f-phone').value.trim(),
+    active:document.getElementById('f-active').value==='1'};
+  if(id){ Object.assign(DB.professionals.find(p=>p.id===id), data); toast('Profissional atualizado.'); }
+  else { DB.professionals.push({id:uid(), ...data}); toast('Profissional criado.'); }
+  save(); closeModal(); navigate('profissionais');
+}
+
+/* =========================================================================
+   VENDAS / POS
+   ========================================================================= */
+let cart = [];
+let posTab = 'servicos';
+let posClientId = '';
+RENDERERS.vendas = function(el){
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  if(!openSession){
+    el.innerHTML = `<div class="panel" style="text-align:center;padding:50px 20px;">
+      <h2 style="margin-top:0;">Caixa fechado</h2>
+      <p style="color:var(--ink-soft);font-size:13.5px;">Abra o caixa para iniciar as vendas do dia.</p>
+      <button class="btn btn-primary" onclick="navigate('caixa')">Ir para o Caixa</button>
+    </div>`;
+    return;
+  }
+  const catalog = posTab==='servicos' ? DB.services : DB.products;
+  el.innerHTML = `
+    <div class="pos-wrap">
+      <div class="pos-catalog">
+        <div class="pill-tabs">
+          <button class="pill-tab ${posTab==='servicos'?'active':''}" onclick="posTab='servicos';navigate('vendas')">Serviços</button>
+          <button class="pill-tab ${posTab==='produtos'?'active':''}" onclick="posTab='produtos';navigate('vendas')">Produtos</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;">
+          ${posTab==='servicos' ? DB.services.map(s=>`
+            <div class="pos-item-card" onclick="addToCart('service','${s.id}')">
+              <div><div class="nm">${s.name}</div><div class="cat">${s.category}${s.type==='pacote'?' · Pacote '+s.packageSessions+'x':''}</div></div>
+              <div class="pr">${fmt(s.type==='pacote'?s.packagePrice:s.price)}</div>
+            </div>`).join('')
+          : DB.products.map(p=>`
+            <div class="pos-item-card" onclick="addToCart('product','${p.id}')" style="${p.stock<=0?'opacity:.45;pointer-events:none;':''}">
+              <div><div class="nm">${p.name}</div><div class="cat">${p.category} · stock ${p.stock}</div></div>
+              <div class="pr">${fmt(p.price)}</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="pos-cart">
+        <div style="padding:14px 16px;border-bottom:1px solid var(--line);">
+          <label style="font-size:11px;font-weight:700;color:var(--ink-soft);">CLIENTE</label>
+          <select style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;margin-top:4px;" onchange="posClientId=this.value;navigate('vendas')">
+            <option value="">Cliente avulso</option>
+            ${DB.clients.map(c=>`<option value="${c.id}" ${posClientId===c.id?'selected':''}>${c.name}${c.special?' ★':''}${c.superClient?' ♦':''}</option>`).join('')}
+          </select>
+          ${(()=>{ const c = posClientId? DB.clients.find(x=>x.id===posClientId):null;
+            if(c&&(c.special||c.superClient)){
+              const label = c.superClient? '♦ Super Cliente — pode comprar a crédito, com preços/descontos definidos pelo Administrador' : '★ Cliente especial — produtos vendidos com preço aberto';
+              return `<p style="font-size:10.5px;color:var(--warn);margin:6px 0 0;">${label}${isAdmin()?'':' (definição de preço só pelo Administrador)'}.</p>`;
+            } return ''; })()}
+        </div>
+        <div class="pos-cart-items" id="cart-items">${renderCartItems()}</div>
+        <div class="pos-cart-foot">
+          ${renderCartTotals()}
+          <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px;padding:11px;" ${cart.length?'':'disabled'} onclick="openCheckoutModal()">Finalizar venda</button>
+          <button class="btn" style="width:100%;justify-content:center;margin-top:8px;" ${cart.length?'':'disabled'} onclick="cart=[];navigate('vendas')">Limpar carrinho</button>
+        </div>
+      </div>
+    </div>
+  `;
+};
+function cartTotal(){ return cart.reduce((a,i)=>a+i.price*i.qty,0); }
+function renderCartItems(){
+  if(!cart.length) return `<p style="font-size:12.5px;color:var(--ink-soft);text-align:center;margin-top:30px;">Carrinho vazio.<br>Selecione serviços ou produtos.</p>`;
+  return cart.map((item,idx)=>`
+    <div class="cart-line">
+      <div style="flex:1;">
+        <div style="font-weight:700;">${item.name}${item.openPrice?' <span class="tag tag-warn" style="font-size:9.5px;">Preço aberto</span>':''}</div>
+        <div style="color:var(--ink-soft);font-size:11px;">${item.category||''}</div>
+        ${item.type==='product' ? `<div class="qty-ctrl"><button onclick="changeQty(${idx},-1)">-</button><span>${item.qty}</span><button onclick="changeQty(${idx},1)">+</button></div>` : ''}
+      </div>
+      <div style="text-align:right;">
+        <div style="font-weight:700;">${fmt(item.price*item.qty)}</div>
+        <button class="btn btn-sm btn-danger" style="margin-top:4px;" onclick="removeFromCart(${idx})">Remover</button>
+      </div>
+    </div>`).join('');
+}
+function renderCartTotals(){
+  return `<div class="pos-totals-row total"><span>Total</span><span>${fmt(cartTotal())}</span></div>`;
+}
+function addToCart(type,id){
+  if(type==='service'){
+    const s = serviceById(id);
+    cart.push({type:'service', refId:s.id, name:s.name, category:s.category, price: s.type==='pacote'?s.packagePrice:s.price, qty:1, isPackage:s.type==='pacote', packageSessions:s.packageSessions});
+  } else {
+    const p = productById(id);
+    const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
+    if(client && (client.special || client.superClient)){
+      if(!isAdmin()){ toast('Este cliente tem preços especiais — a venda de produtos a este cliente só pode ser feita pelo Administrador.','bad'); return; }
+      const label = client.superClient ? `preço/desconto para Super Cliente` : `Preço aberto`;
+      const input = window.prompt(`${label} — "${p.name}" (cliente: ${client.name})`, p.price);
+      if(input===null) return;
+      const openPrice = Number(input);
+      if(!openPrice || openPrice<0){ toast('Preço inválido.','bad'); return; }
+      const existingOpen = cart.find(i=>i.type==='product' && i.refId===p.id && i.openPrice);
+      if(existingOpen){ if(existingOpen.qty < p.stock){ existingOpen.qty++; } else { toast('Stock insuficiente.','bad'); return; } }
+      else cart.push({type:'product', refId:p.id, name:p.name, category:p.category, price:openPrice, qty:1, openPrice:true});
+      navigate('vendas'); return;
+    }
+    const existing = cart.find(i=>i.type==='product' && i.refId===p.id && !i.openPrice);
+    if(existing){ if(existing.qty < p.stock) existing.qty++; else { toast('Stock insuficiente.','bad'); return; } }
+    else cart.push({type:'product', refId:p.id, name:p.name, category:p.category, price:p.price, qty:1});
+  }
+  navigate('vendas');
+}
+function changeQty(idx,delta){
+  const item = cart[idx];
+  if(item.type!=='product') return;
+  const p = productById(item.refId);
+  const newQty = item.qty+delta;
+  if(newQty<1){ removeFromCart(idx); return; }
+  if(newQty>p.stock){ toast('Stock insuficiente.','bad'); return; }
+  item.qty = newQty; navigate('vendas');
+}
+function removeFromCart(idx){ cart.splice(idx,1); navigate('vendas'); }
+
+function openCheckoutModal(){
+  const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
+  const availableMethods = PAY_METHODS.filter(m=> m!=='Crédito (Super Cliente)' || (client && client.superClient));
+  openModal('Finalizar venda', `
+    <div style="max-height:200px;overflow-y:auto;margin-bottom:14px;">
+      ${cart.map(i=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;"><span>${i.qty}x ${i.name}</span><span>${fmt(i.price*i.qty)}</span></div>`).join('')}
+    </div>
+    <div class="field"><label>Desconto (MT)</label><input type="number" id="f-discount" value="0" oninput="updateCheckoutTotal()"></div>
+    <div class="field"><label>Método de pagamento</label><select id="f-paymethod" onchange="toggleInstallmentFields()">${availableMethods.map(m=>`<option>${m}</option>`).join('')}</select></div>
+    <div id="f-installment-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
+      <div class="field-row cols-2">
+        <div class="field" style="margin-bottom:8px;"><label>Nº de parcelas</label><input type="number" id="f-installments" value="2" min="2" max="24" oninput="updateCheckoutTotal()"></div>
+        <div class="field" style="margin-bottom:8px;"><label>Intervalo (dias)</label><input type="number" id="f-installmentgap" value="30"></div>
+      </div>
+      <div class="field" style="margin-bottom:0;"><label>Data da 1ª parcela</label><input type="date" id="f-installmentstart" value="${today()}"></div>
+      <p style="font-size:11px;color:var(--ink-soft);margin:8px 0 0;">As parcelas ficam registadas como pendentes e podem ser marcadas como pagas em Contabilidade → Parcelamentos.</p>
+    </div>
+    <div id="f-credit-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
+      <p style="font-size:11px;color:var(--ink-soft);margin:0;">Valor total fica registado como saldo em aberto de <strong>${client?client.name:'—'}</strong>. Pode ser liquidado a qualquer momento em Contabilidade → Parcelamentos.</p>
+    </div>
+    <div class="field"><label>Profissional (comissão)</label><select id="f-payprof"><option value="">—</option>${DB.professionals.filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
+    <div class="field"><label>Documento a emitir</label><select id="f-doctype"><option value="Fatura-Recibo">Fatura-Recibo</option><option value="Fatura">Fatura</option><option value="Recibo">Recibo</option></select></div>
+    <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;font-family:'Fraunces',serif;border-top:1px solid var(--line);padding-top:12px;margin-top:8px;">
+      <span>Total</span><span id="checkout-total">${fmt(cartTotal())}</span>
+    </div>
+  `, `<button class="btn" onclick="closeModal()">Voltar</button><button class="btn btn-primary" onclick="finalizeSale()">Confirmar pagamento</button>`);
+}
+function toggleInstallmentFields(){
+  const method = document.getElementById('f-paymethod').value;
+  document.getElementById('f-installment-wrap').style.display = method==='Pagamento Parcelado' ? 'block':'none';
+  document.getElementById('f-credit-wrap').style.display = method==='Crédito (Super Cliente)' ? 'block':'none';
+}
+function updateCheckoutTotal(){
+  const d = Number(document.getElementById('f-discount').value)||0;
+  document.getElementById('checkout-total').textContent = fmt(Math.max(0,cartTotal()-d));
+}
+function finalizeSale(){
+  const discount = Number(document.getElementById('f-discount').value)||0;
+  const paymentMethod = document.getElementById('f-paymethod').value;
+  const professionalId = document.getElementById('f-payprof').value;
+  const docType = document.getElementById('f-doctype').value;
+  const total = Math.max(0, cartTotal()-discount);
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
+
+  if(paymentMethod==='Crédito (Super Cliente)' && !(client && client.superClient)){
+    toast('Selecione um cliente marcado como Super Cliente para usar Crédito.','bad'); return;
+  }
+
+  let installments = [];
+  if(paymentMethod==='Pagamento Parcelado'){
+    const n = Math.max(2, Number(document.getElementById('f-installments').value)||2);
+    const gap = Number(document.getElementById('f-installmentgap').value)||30;
+    const startDate = document.getElementById('f-installmentstart').value || today();
+    const base = Math.floor((total/n)*100)/100;
+    let allocated = 0;
+    for(let i=0;i<n;i++){
+      const due = new Date(startDate+'T00:00:00');
+      due.setDate(due.getDate()+gap*i);
+      const amount = (i===n-1) ? Math.round((total-allocated)*100)/100 : base;
+      allocated += amount;
+      installments.push({id:uid(), n:i+1, of:n, amount, dueDate:due.toISOString().slice(0,10), status:'pendente', paidDate:null});
+    }
+  } else if(paymentMethod==='Crédito (Super Cliente)'){
+    installments.push({id:uid(), n:1, of:1, amount:total, dueDate:today(), status:'pendente', paidDate:null});
+  }
+
+  // stock deduction
+  cart.forEach(item=>{
+    if(item.type==='product'){
+      const p = productById(item.refId);
+      p.stock = Math.max(0, p.stock-item.qty);
+      DB.stockMovements.push({id:uid(),productId:p.id,type:'saida',qty:item.qty,reason:'Venda',date:today()});
+    }
+    if(item.type==='service' && item.isPackage){
+      DB.clientPackages.push({id:uid(), clientId:posClientId||null, serviceId:item.refId, serviceName:item.name, category:item.category, totalSessions:item.packageSessions, usedSessions:0, purchaseDate:today(), price:item.price});
+    }
+  });
+
+  const sale = {
+    id:uid(), invoice:DB.settings.nextInvoice, docType, date:today(), time:nowTime(),
+    clientId: posClientId||null, items:cart.map(i=>({...i})), subtotal:cartTotal(), discount, total,
+    paymentMethod, installments, professionalId: professionalId||null, cashSessionId: openSession? openSession.id : null,
+  };
+  DB.sales.push(sale);
+  DB.settings.nextInvoice++;
+  cart = []; posClientId='';
+  save(); closeModal();
+  toast('Venda registada com sucesso.');
+  printReceipt(sale);
+  navigate('vendas');
+}
+function printReceipt(sale){
+  const client = sale.clientId? clientName(sale.clientId) : 'Cliente avulso';
+  const docLabel = (sale.docType || 'Fatura-Recibo').toUpperCase();
+  const prof = sale.professionalId ? profName(sale.professionalId) : null;
+  const html = `
+    <div style="font-family:'Manrope',sans-serif;max-width:320px;margin:0 auto;">
+      <div style="text-align:center;margin-bottom:10px;">
+        <img src="${LOGO_B64}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin-bottom:6px;">
+        <div style="font-family:'Fraunces',serif;font-weight:700;font-size:20px;">${DB.settings.companyName.split(' ')[0]}</div>
+        <div style="font-size:9.5px;letter-spacing:2px;">SKIN RENEWAL</div>
+        <div style="font-size:10.5px;color:#555;margin-top:3px;">${DB.settings.address}${DB.settings.phone?' · '+DB.settings.phone:''}</div>
+        ${DB.settings.nuit? `<div style="font-size:10.5px;color:#555;">NUIT: ${DB.settings.nuit}</div>` : ''}
+      </div>
+      <div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:1px;border-top:1px solid #333;border-bottom:1px solid #333;padding:5px 0;margin:8px 0 6px;">${docLabel}</div>
+      <div style="font-size:11px;padding:2px 0 8px;">
+        Nº ${String(sale.invoice).padStart(5,'0')} · ${fmtDate(sale.date)} ${sale.time}<br>
+        Cliente: ${client}${prof? `<br>Atendido por: ${prof}`:''}
+      </div>
+      <div style="border-top:1px dashed #999;padding-top:6px;">
+      ${sale.items.map(i=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${i.qty}x ${i.name}</span><span>${fmt(i.price*i.qty)}</span></div>`).join('')}
+      </div>
+      <div style="border-top:1px dashed #999;margin-top:8px;padding-top:6px;font-size:12px;">
+        <div style="display:flex;justify-content:space-between;"><span>Subtotal</span><span>${fmt(sale.subtotal)}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Desconto</span><span>${fmt(sale.discount)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;"><span>Total</span><span>${fmt(sale.total)}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px;"><span>Pagamento</span><span>${sale.paymentMethod}</span></div>
+      </div>
+      ${sale.installments && sale.installments.length? `
+      <div style="border-top:1px dashed #999;margin-top:8px;padding-top:6px;font-size:11px;">
+        <div style="font-weight:700;margin-bottom:4px;">Plano de parcelas</div>
+        ${sale.installments.map(i=>`<div style="display:flex;justify-content:space-between;padding:1px 0;"><span>${i.n}/${i.of} — ${fmtDate(i.dueDate)}</span><span>${fmt(i.amount)}</span></div>`).join('')}
+      </div>` : ''}
+      <div style="text-align:center;font-size:10px;margin-top:14px;color:#555;">Documento processado por computador · Obrigado pela preferência!</div>
+    </div>`;
+  document.getElementById('print-area').innerHTML = html;
+  setTimeout(()=>window.print(), 150);
+}
+
+/* =========================================================================
+   CAIXA
+   ========================================================================= */
+RENDERERS.caixa = function(el){
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  const history = [...DB.cashSessions].filter(c=>c.status==='fechado').sort((a,b)=>b.closedAt.localeCompare(a.closedAt)).slice(0,15);
+
+  if(!openSession){
+    el.innerHTML = `
+      <div class="panel" style="max-width:420px;">
+        <h2 style="margin-top:0;font-size:17px;">Abrir caixa</h2>
+        <div class="field"><label>Valor de abertura (fundo de troco)</label><input type="number" id="f-opening" value="0"></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openCash()">Abrir caixa</button>
+      </div>
+      <div class="section-head" style="margin-top:26px;"><h2>Histórico de fechos</h2></div>
+      ${renderCashHistory(history)}
+    `;
+    return;
+  }
+  const sessionSales = DB.sales.filter(s=>s.cashSessionId===openSession.id);
+  const byMethod = {};
+  PAY_METHODS.forEach(m=>byMethod[m]=0);
+  sessionSales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
+  const expected = openSession.openingAmount + (byMethod['Numerário']||0);
+
+  el.innerHTML = `
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">Aberto às</div><div class="value" style="font-size:19px;">${openSession.openedAt.slice(11,16)}</div><div class="sub">fundo: ${fmt(openSession.openingAmount)}</div></div>
+      <div class="kpi-card"><div class="label">Vendas na sessão</div><div class="value">${sessionSales.length}</div><div class="sub">${fmt(sessionSales.reduce((a,s)=>a+s.total,0))}</div></div>
+      <div class="kpi-card"><div class="label">Numerário esperado</div><div class="value">${fmt(expected)}</div><div class="sub">fundo + vendas em dinheiro</div></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Totais por método de pagamento</h3>
+      ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${m}</span><strong>${fmt(byMethod[m]||0)}</strong></div>`).join('')}
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Fechar caixa</h3>
+      <div class="field"><label>Valor contado em numerário</label><input type="number" id="f-closing" value="${expected}"></div>
+      <button class="btn btn-danger" style="border:1px solid var(--bad);width:100%;justify-content:center;" onclick="closeCash('${openSession.id}', ${expected})">Fechar caixa</button>
+    </div>
+    <div class="section-head" style="margin-top:10px;"><h2>Histórico de fechos</h2></div>
+    ${renderCashHistory(history)}
+  `;
+};
+function renderCashHistory(history){
+  const isAdmin = session && session.role==='Administrador';
+  return `<div class="table-wrap">
+    <table><thead><tr><th>Data</th><th>Abertura</th><th>Fecho</th><th>Esperado</th><th>Contado</th><th>Diferença</th>${isAdmin?'<th></th>':''}</tr></thead>
+    <tbody>${history.map(c=>`<tr>
+      <td>${fmtDate(c.openedAt.slice(0,10))}</td><td>${fmt(c.openingAmount)}</td><td>${fmt(c.closingAmount)}</td>
+      <td>${fmt(c.expectedTotal)}</td><td>${fmt(c.closingAmount)}</td>
+      <td style="color:${c.difference<0?'var(--bad)':(c.difference>0?'var(--warn)':'var(--good)')};font-weight:700;">${c.difference>0?'+':''}${fmt(c.difference)}</td>
+      ${isAdmin?`<td><button class="btn btn-sm btn-danger" onclick="deleteCashSession('${c.id}')">${ic('trash',13)}</button></td>`:''}
+    </tr>`).join('') || `<tr class="empty-row"><td colspan="${isAdmin?7:6}">Sem fechos registados ainda.</td></tr>`}</tbody></table>
+  </div>`;
+}
+function deleteCashSession(id){
+  confirmAction('Eliminar este registo histórico de caixa? As vendas associadas não são apagadas, apenas o registo de abertura/fecho.', ()=>{
+    DB.cashSessions = DB.cashSessions.filter(c=>c.id!==id);
+    save(); toast('Registo de caixa eliminado.','bad'); navigate('caixa');
+  });
+}
+function openCash(){
+  const opening = Number(document.getElementById('f-opening').value)||0;
+  DB.cashSessions.push({id:uid(), status:'aberto', openedAt:new Date().toISOString(), openedBy:session?session.name:'—', openingAmount:opening, closedAt:null, closedBy:null, closingAmount:0, expectedTotal:0, difference:0});
+  save(); toast('Caixa aberto.'); navigate('caixa');
+}
+function closeCash(id, expected){
+  const counted = Number(document.getElementById('f-closing').value)||0;
+  const s = DB.cashSessions.find(c=>c.id===id);
+  s.status='fechado'; s.closedAt=new Date().toISOString(); s.closedBy = session?session.name:'—';
+  s.closingAmount = counted; s.expectedTotal = expected; s.difference = counted-expected;
+  save(); toast('Caixa fechado.'); navigate('caixa');
+}
+
+/* =========================================================================
+   RELATÓRIOS
+   ========================================================================= */
+let reportRange = 7;
+RENDERERS.relatorios = function(el){
+  const from = new Date(); from.setDate(from.getDate()-(reportRange-1));
+  const fromStr = from.toISOString().slice(0,10);
+  const sales = DB.sales.filter(s=>s.date>=fromStr);
+  const revenue = sales.reduce((a,s)=>a+s.total,0);
+  const serviceRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='service').reduce((x,i)=>x+i.price*i.qty,0),0);
+  const productRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>x+i.price*i.qty,0),0);
+
+  const byMethod = {}; PAY_METHODS.forEach(m=>byMethod[m]=0);
+  sales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
+
+  const itemCounts = {};
+  sales.forEach(s=>s.items.forEach(i=>{ itemCounts[i.name]=(itemCounts[i.name]||0)+i.qty*i.price; }));
+  const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const maxTop = topItems.length? topItems[0][1] : 1;
+
+  const byCat = {}; serviceCats().concat(PRODUCT_CATS).forEach(c=>byCat[c]=0);
+  sales.forEach(s=>s.items.forEach(i=>{ if(i.category) byCat[i.category]=(byCat[i.category]||0)+i.qty*i.price; }));
+
+  el.innerHTML = `
+    <div class="pill-tabs">
+      ${[7,30,90].map(r=>`<button class="pill-tab ${reportRange===r?'active':''}" onclick="reportRange=${r};navigate('relatorios')">${r} dias</button>`).join('')}
+      <button class="btn btn-sm" style="margin-left:auto;" onclick="printRelatorio()">${ic('box',13)} Imprimir relatório</button>
+      <button class="btn btn-sm" onclick="exportBackup()">${ic('box',13)} Exportar dados (JSON)</button>
+    </div>
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">Receita total</div><div class="value">${fmt(revenue)}</div><div class="sub">${sales.length} venda(s)</div></div>
+      <div class="kpi-card"><div class="label">Receita de serviços</div><div class="value" style="font-size:20px;">${fmt(serviceRevenue)}</div></div>
+      <div class="kpi-card"><div class="label">Receita de produtos</div><div class="value" style="font-size:20px;">${fmt(productRevenue)}</div></div>
+    </div>
+    <div class="field-row cols-2" style="align-items:start;">
+      <div class="panel">
+        <h3 style="margin-top:0;font-size:14px;">Mais vendidos (valor)</h3>
+        ${topItems.length? topItems.map(([name,val])=>`
+          <div style="margin-bottom:9px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>${name}</span><span>${fmt(val)}</span></div>
+            <div class="progress-bar"><div style="width:${val/maxTop*100}%"></div></div>
+          </div>`).join('') : `<p style="font-size:12.5px;color:var(--ink-soft);">Sem dados no período.</p>`}
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0;font-size:14px;">Receita por método de pagamento</h3>
+        ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${m}</span><strong>${fmt(byMethod[m]||0)}</strong></div>`).join('')}
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Receita por categoria</h3>
+      <div class="field-row" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+        ${Object.entries(byCat).map(([cat,val])=>`<div><div style="font-size:11px;color:var(--ink-soft);">${cat}</div><div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;">${fmt(val)}</div></div>`).join('')}
+      </div>
+    </div>
+    <div class="section-head"><h2>Faturas / recibos emitidos</h2></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Documento</th><th>Pagamento</th><th>Total</th><th></th></tr></thead>
+      <tbody>
+        ${[...sales].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).map(s=>`<tr>
+          <td>${String(s.invoice).padStart(5,'0')}</td>
+          <td>${fmtDate(s.date)} ${s.time}</td>
+          <td>${s.clientId? clientName(s.clientId) : 'Cliente avulso'}</td>
+          <td>${s.docType||'Fatura-Recibo'}</td>
+          <td>${s.paymentMethod}</td>
+          <td><strong>${fmt(s.total)}</strong></td>
+          <td><button class="btn btn-sm" onclick="reprintSale('${s.id}')">Reimprimir</button></td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="7">Sem vendas registadas no período.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function reprintSale(id){
+  const sale = DB.sales.find(s=>s.id===id);
+  if(sale) printReceipt(sale);
+}
+function printRelatorio(){
+  const from = new Date(); from.setDate(from.getDate()-(reportRange-1));
+  const fromStr = from.toISOString().slice(0,10);
+  const sales = DB.sales.filter(s=>s.date>=fromStr);
+  const revenue = sales.reduce((a,s)=>a+s.total,0);
+  const serviceRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='service').reduce((x,i)=>x+i.price*i.qty,0),0);
+  const productRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>x+i.price*i.qty,0),0);
+  const byMethod = {}; PAY_METHODS.forEach(m=>byMethod[m]=0);
+  sales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
+  const itemCounts = {};
+  sales.forEach(s=>s.items.forEach(i=>{ itemCounts[i.name]=(itemCounts[i.name]||0)+i.qty*i.price; }));
+  const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const byCat = {}; serviceCats().concat(PRODUCT_CATS).forEach(c=>byCat[c]=0);
+  sales.forEach(s=>s.items.forEach(i=>{ if(i.category) byCat[i.category]=(byCat[i.category]||0)+i.qty*i.price; }));
+
+  const body = printDocHeader('Relatório de Vendas', `Últimos ${reportRange} dias · ${fmtDate(fromStr)} a ${fmtDate(today())}`) + `
+    <div style="max-width:440px;margin:0 auto;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>Receita total (${sales.length} venda(s))</span><span>${fmt(revenue)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>Receita de serviços</span><span>${fmt(serviceRevenue)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>Receita de produtos</span><span>${fmt(productRevenue)}</span></div>
+      <div style="font-weight:700;margin:14px 0 4px;">Mais vendidos</div>
+      ${topItems.map(([name,val])=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #ccc;"><span>${name}</span><span>${fmt(val)}</span></div>`).join('') || '<div style="color:#777;">Sem dados.</div>'}
+      <div style="font-weight:700;margin:14px 0 4px;">Por método de pagamento</div>
+      ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #ccc;"><span>${m}</span><span>${fmt(byMethod[m]||0)}</span></div>`).join('')}
+      <div style="font-weight:700;margin:14px 0 4px;">Por categoria</div>
+      ${Object.entries(byCat).filter(([,v])=>v>0).map(([cat,val])=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #ccc;"><span>${cat}</span><span>${fmt(val)}</span></div>`).join('') || '<div style="color:#777;">Sem dados.</div>'}
+    </div>`;
+  document.getElementById('print-area').innerHTML = body + printDocFooter();
+  setTimeout(()=>window.print(), 150);
+}
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(DB,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'rnw-backup-'+today()+'.json';
+  a.click(); URL.revokeObjectURL(url);
+  toast('Cópia de segurança exportada.');
+}
+
+/* =========================================================================
+   UTILIZADORES (apenas Administrador)
+   ========================================================================= */
+RENDERERS.usuarios = function(el){
+  el.innerHTML = `
+    <div class="section-head"><h2>Utilizadores do sistema</h2><div class="actions"><button class="btn btn-bronze" onclick="openUserModal()">${ic('plus',14)} Novo utilizador</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Nome</th><th>Perfil</th><th>PIN</th><th></th></tr></thead>
+      <tbody>
+        ${DB.users.map(u=>`<tr>
+          <td><strong>${u.name}</strong>${session&&session.id===u.id?' <span class="tag tag-neutral">Você</span>':''}</td>
+          <td><span class="tag ${u.role==='Administrador'?'tag-good':'tag-neutral'}">${u.role}</span></td>
+          <td>••••</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openUserModal('${u.id}')">${ic('edit',13)}</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>
+    <p style="font-size:11.5px;color:var(--ink-soft);margin-top:12px;">Apenas o perfil Administrador pode criar, editar ou eliminar utilizadores. Cada perfil vê apenas os módulos atribuídos à sua função.</p>
+  `;
+};
+function openUserModal(id){
+  const u = id ? DB.users.find(x=>x.id===id) : null;
+  const roles = ['Administrador','Recepção','Esteticista'];
+  openModal(u?'Editar utilizador':'Novo utilizador', `
+    <div class="field"><label>Nome</label><input id="f-uname" value="${u?u.name:''}"></div>
+    <div class="field"><label>Perfil</label><select id="f-urole">${roles.map(r=>`<option ${u&&u.role===r?'selected':''}>${r}</option>`).join('')}</select></div>
+    <div class="field"><label>PIN (4 dígitos)</label><input id="f-upin" maxlength="4" inputmode="numeric" value="${u?u.pin:''}" placeholder="Ex: 1234"></div>
+  `, `
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveUser(${u?`'${u.id}'`:'null'})">Guardar</button>
+  `);
+}
+function saveUser(id){
+  const name = document.getElementById('f-uname').value.trim();
+  const role = document.getElementById('f-urole').value;
+  const pin = document.getElementById('f-upin').value.trim();
+  if(!name){ toast('Indique o nome.','bad'); return; }
+  if(!/^\d{4}$/.test(pin)){ toast('O PIN deve ter exatamente 4 dígitos.','bad'); return; }
+  const clash = DB.users.find(u=>u.role===role && u.pin===pin && u.id!==id);
+  if(clash){ toast('Já existe um utilizador com este PIN neste perfil.','bad'); return; }
+  if(id){ Object.assign(DB.users.find(u=>u.id===id), {name,role,pin}); toast('Utilizador atualizado.'); if(session&&session.id===id) session={id,name,role,pin}; }
+  else { DB.users.push({id:uid(), name, role, pin}); toast('Utilizador criado.'); }
+  save(); closeModal(); navigate('usuarios');
+}
+function deleteUser(id){
+  const u = DB.users.find(x=>x.id===id);
+  if(u.role==='Administrador' && DB.users.filter(x=>x.role==='Administrador').length<=1){
+    toast('Tem de existir pelo menos um Administrador.','bad'); return;
+  }
+  if(session && session.id===id){ toast('Não pode eliminar o utilizador com sessão ativa.','bad'); return; }
+  confirmAction('Eliminar o utilizador "'+u.name+'"?', ()=>{
+    DB.users = DB.users.filter(x=>x.id!==id); save(); toast('Utilizador eliminado.','bad'); navigate('usuarios');
+  });
+}
+
+/* =========================================================================
+   CONTABILIDADE (apenas Administrador)
+   ========================================================================= */
+let contabTab = 'balancete';
+let contabMonth = today().slice(0,7); // YYYY-MM
+RENDERERS.contabilidade = function(el){
+  const monthSales = DB.sales.filter(s=>s.date.slice(0,7)===contabMonth);
+  const monthExpenses = DB.expenses.filter(e=>e.date.slice(0,7)===contabMonth);
+
+  el.innerHTML = `
+    <div class="section-head">
+      <div class="pill-tabs" style="margin-bottom:0;">
+        <button class="pill-tab ${contabTab==='balancete'?'active':''}" onclick="contabTab='balancete';navigate('contabilidade')">Balancete</button>
+        <button class="pill-tab ${contabTab==='iva'?'active':''}" onclick="contabTab='iva';navigate('contabilidade')">Apuramento de IVA</button>
+        <button class="pill-tab ${contabTab==='irpc'?'active':''}" onclick="contabTab='irpc';navigate('contabilidade')">Estimativa de IRPC</button>
+        <button class="pill-tab ${contabTab==='despesas'?'active':''}" onclick="contabTab='despesas';navigate('contabilidade')">Despesas / Compras</button>
+        <button class="pill-tab ${contabTab==='parcelamentos'?'active':''}" onclick="contabTab='parcelamentos';navigate('contabilidade')">Parcelamentos</button>
+      </div>
+      ${contabTab!=='parcelamentos'? `<input type="month" value="${contabMonth}" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;" onchange="contabMonth=this.value;navigate('contabilidade')">`:''}
+    </div>
+    <div id="contab-body"></div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:18px;">Estes mapas são um apoio de gestão simplificado, gerado automaticamente a partir das vendas, despesas e estoque registados no sistema. Não substituem a contabilidade organizada exigida por lei nem a validação de um contabilista certificado.</p>
+  `;
+  const body = document.getElementById('contab-body');
+  if(contabTab==='balancete') renderBalancete(body, monthSales, monthExpenses);
+  else if(contabTab==='iva') renderIva(body, monthSales, monthExpenses);
+  else if(contabTab==='irpc') renderIrpc(body, monthSales, monthExpenses);
+  else if(contabTab==='parcelamentos') renderParcelamentos(body);
+  else renderDespesas(body, monthExpenses);
+};
+function renderParcelamentos(el){
+  const rows = [];
+  DB.sales.forEach(s=>{
+    (s.installments||[]).forEach(inst=>{
+      rows.push({sale:s, inst, isCredit: s.paymentMethod==='Crédito (Super Cliente)'});
+    });
+  });
+  rows.sort((a,b)=> (a.inst.status===b.inst.status?0:(a.inst.status==='pendente'?-1:1)) || a.inst.dueDate.localeCompare(b.inst.dueDate));
+  const pendingTotal = rows.filter(r=>r.inst.status==='pendente').reduce((a,r)=>a+r.inst.amount,0);
+  const overdueCount = rows.filter(r=>r.inst.status==='pendente' && r.inst.dueDate<today()).length;
+  const creditPending = rows.filter(r=>r.isCredit && r.inst.status==='pendente').reduce((a,r)=>a+r.inst.amount,0);
+  el.innerHTML = `
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">Total pendente</div><div class="value">${fmt(pendingTotal)}</div></div>
+      <div class="kpi-card"><div class="label">Em atraso</div><div class="value" style="color:${overdueCount?'var(--bad)':'var(--ink)'}">${overdueCount}</div></div>
+      <div class="kpi-card"><div class="label">Saldo em crédito (Super Clientes)</div><div class="value">${fmt(creditPending)}</div></div>
+    </div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Cliente</th><th>Venda Nº</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${rows.map(({sale,inst,isCredit})=>{
+          const overdue = inst.status==='pendente' && inst.dueDate<today();
+          return `<tr>
+            <td>${sale.clientId? clientName(sale.clientId) : 'Cliente avulso'}</td>
+            <td>${String(sale.invoice).padStart(5,'0')}</td>
+            <td>${isCredit? `<span class="tag tag-good">Crédito</span>` : `Parcela ${inst.n}/${inst.of}`}</td>
+            <td>${fmtDate(inst.dueDate)}${overdue?` <span class="tag tag-bad">Atrasada</span>`:''}</td>
+            <td><strong>${fmt(inst.amount)}</strong></td>
+            <td>${inst.status==='pago'? `<span class="tag tag-good">${isCredit?'Liquidado':'Paga'} ${inst.paidDate?fmtDate(inst.paidDate):''}</span>` : `<span class="tag tag-warn">Pendente</span>`}</td>
+            <td>${inst.status==='pendente'? `<button class="btn btn-sm" onclick="markInstallmentPaid('${sale.id}','${inst.id}')">${isCredit?'Marcar como liquidado':'Marcar como paga'}</button>` : ''}</td>
+          </tr>`;
+        }).join('') || `<tr class="empty-row"><td colspan="7">Sem parcelamentos ou créditos registados.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+}
+function markInstallmentPaid(saleId, instId){
+  const sale = DB.sales.find(s=>s.id===saleId);
+  const inst = sale && sale.installments.find(i=>i.id===instId);
+  if(!inst) return;
+  inst.status='pago'; inst.paidDate=today();
+  save(); toast('Parcela marcada como paga.'); navigate('contabilidade');
+}
+
+function computeBalancete(monthSales, monthExpenses){
+  const receitaServicos = monthSales.reduce((a,s)=>a+s.items.filter(i=>i.type==='service').reduce((x,i)=>x+i.price*i.qty,0),0);
+  const receitaProdutos = monthSales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>x+i.price*i.qty,0),0);
+  const descontos = monthSales.reduce((a,s)=>a+s.discount,0);
+  const cmv = monthSales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>{ const p=productById(i.refId); return x+(p?p.cost:0)*i.qty; },0),0);
+  const comissoes = monthSales.reduce((a,s)=>{ if(!s.professionalId) return a; const prof=DB.professionals.find(p=>p.id===s.professionalId); return a+(prof? s.total*prof.commissionRate/100 : 0); },0);
+  const despesasGerais = monthExpenses.reduce((a,e)=>a+e.amount,0);
+  const disponibilidades = {}; PAY_METHODS.forEach(m=>disponibilidades[m]=0);
+  monthSales.forEach(s=>disponibilidades[s.paymentMethod]=(disponibilidades[s.paymentMethod]||0)+s.total);
+  const valorInventario = DB.products.reduce((a,p)=>a+p.cost*p.stock,0);
+  const debitos = [
+    ['Custo das Mercadorias Vendidas (CMV)', cmv],
+    ['Comissões a Profissionais', comissoes],
+    ['Descontos Concedidos', descontos],
+    ['Despesas Gerais', despesasGerais],
+  ];
+  const creditos = [
+    ['Vendas de Serviços', receitaServicos],
+    ['Vendas de Produtos', receitaProdutos],
+  ];
+  const totalDeb = debitos.reduce((a,[,v])=>a+v,0);
+  const totalCred = creditos.reduce((a,[,v])=>a+v,0);
+  return {debitos, creditos, totalDeb, totalCred, resultado: totalCred-totalDeb, disponibilidades, valorInventario};
+}
+function renderBalancete(el, monthSales, monthExpenses){
+  const d = computeBalancete(monthSales, monthExpenses);
+  el.innerHTML = `
+    <div class="section-head"><div></div><div class="actions"><button class="btn" onclick="printContabilidade()">${ic('box',13)} Imprimir</button></div></div>
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">Receita total</div><div class="value">${fmt(d.totalCred)}</div></div>
+      <div class="kpi-card"><div class="label">Custos e despesas</div><div class="value">${fmt(d.totalDeb)}</div></div>
+      <div class="kpi-card"><div class="label">Resultado do mês</div><div class="value" style="color:${d.resultado>=0?'var(--good)':'var(--bad)'}">${fmt(d.resultado)}</div></div>
+    </div>
+    <div class="field-row cols-2" style="align-items:start;">
+      <div class="panel">
+        <h3 style="margin-top:0;font-size:14px;">Débitos (custos / despesas)</h3>
+        ${d.debitos.map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${k}</span><strong>${fmt(v)}</strong></div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0 0;font-weight:700;"><span>Total débitos</span><span>${fmt(d.totalDeb)}</span></div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0;font-size:14px;">Créditos (receitas)</h3>
+        ${d.creditos.map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${k}</span><strong>${fmt(v)}</strong></div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:8px 0 0;font-weight:700;"><span>Total créditos</span><span>${fmt(d.totalCred)}</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Disponibilidades recebidas no mês (por meio de pagamento)</h3>
+      ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${m}</span><strong>${fmt(d.disponibilidades[m]||0)}</strong></div>`).join('')}
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Existências (valor de inventário ao custo, posição atual)</h3>
+      <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;"><span>Total em estoque</span><span>${fmt(d.valorInventario)}</span></div>
+    </div>
+  `;
+}
+
+function computeIva(monthSales, monthExpenses){
+  const rate = DB.settings.ivaRate;
+  const vendasTotal = monthSales.reduce((a,s)=>a+s.total,0);
+  const ivaLiquidado = vendasTotal * rate/(100+rate); // assumes prices are IVA-inclusive
+  const comprasComIva = monthExpenses.filter(e=>e.hasVat);
+  const ivaDedutivel = comprasComIva.reduce((a,e)=>a+(e.vatAmount||0),0);
+  return {rate, ivaLiquidado, comprasComIva, ivaDedutivel, apurado: ivaLiquidado-ivaDedutivel};
+}
+function renderIva(el, monthSales, monthExpenses){
+  const d = computeIva(monthSales, monthExpenses);
+  el.innerHTML = `
+    <div class="section-head"><div></div><div class="actions"><button class="btn" onclick="printContabilidade()">${ic('box',13)} Imprimir</button></div></div>
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">IVA liquidado (sobre vendas)</div><div class="value">${fmt(d.ivaLiquidado)}</div><div class="sub">taxa ${d.rate}% · valores de venda com IVA incluído</div></div>
+      <div class="kpi-card"><div class="label">IVA dedutível (sobre compras)</div><div class="value">${fmt(d.ivaDedutivel)}</div><div class="sub">${d.comprasComIva.length} despesa(s) com IVA</div></div>
+      <div class="kpi-card"><div class="label">${d.apurado>=0?'IVA a pagar':'Crédito de IVA'}</div><div class="value" style="color:${d.apurado>=0?'var(--bad)':'var(--good)'}">${fmt(Math.abs(d.apurado))}</div></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Como este valor é calculado</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">
+        IVA liquidado = Total de vendas do mês × ${d.rate} ÷ (100 + ${d.rate}), assumindo que os preços praticados já incluem IVA.<br>
+        IVA dedutível = soma do IVA registado nas despesas/compras do mês marcadas como "com IVA" (ver separador Despesas / Compras).<br>
+        Apuramento = IVA liquidado − IVA dedutível. Confirme sempre estes valores com o seu contabilista antes de submeter a declaração periódica na Autoridade Tributária.
+      </p>
+    </div>
+  `;
+}
+
+function computeIrpc(monthSales, monthExpenses){
+  const rate = DB.settings.irpcRate;
+  const receita = monthSales.reduce((a,s)=>a+s.total,0);
+  const cmv = monthSales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>{ const p=productById(i.refId); return x+(p?p.cost:0)*i.qty; },0),0);
+  const comissoes = monthSales.reduce((a,s)=>{ if(!s.professionalId) return a; const prof=DB.professionals.find(p=>p.id===s.professionalId); return a+(prof? s.total*prof.commissionRate/100 : 0); },0);
+  const despesas = monthExpenses.reduce((a,e)=>a+e.amount,0);
+  const custosTotal = cmv+comissoes+despesas;
+  const lucroTributavel = Math.max(0, receita-custosTotal);
+  return {rate, receita, custosTotal, lucroTributavel, irpcEstimado: lucroTributavel*rate/100};
+}
+function renderIrpc(el, monthSales, monthExpenses){
+  const d = computeIrpc(monthSales, monthExpenses);
+  el.innerHTML = `
+    <div class="section-head"><div></div><div class="actions"><button class="btn" onclick="printContabilidade()">${ic('box',13)} Imprimir</button></div></div>
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">Receita do mês</div><div class="value">${fmt(d.receita)}</div></div>
+      <div class="kpi-card"><div class="label">Custos e despesas</div><div class="value">${fmt(d.custosTotal)}</div></div>
+      <div class="kpi-card"><div class="label">Lucro tributável (estimado)</div><div class="value">${fmt(d.lucroTributavel)}</div></div>
+      <div class="kpi-card"><div class="label">IRPC estimado (${d.rate}%)</div><div class="value" style="color:var(--bad)">${fmt(d.irpcEstimado)}</div></div>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Nota</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);line-height:1.6;">
+        Esta é uma estimativa simplificada de apuramento do IRPC (lucro tributável × ${d.rate}%), baseada apenas nas vendas, custo das mercadorias vendidas, comissões e despesas registadas neste sistema.
+        Não considera amortizações, provisões, benefícios fiscais, pagamentos por conta já efetuados, nem outros ajustamentos fiscais previstos no Código do IRPC. Use como indicador de gestão e valide sempre o apuramento definitivo com um contabilista certificado.
+      </p>
+    </div>
+  `;
+}
+
+function printDocHeader(title, subtitle){
+  return `
+    <div style="text-align:center;margin-bottom:16px;">
+      <img src="${LOGO_B64}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;margin-bottom:6px;">
+      <div style="font-family:'Fraunces',serif;font-weight:700;font-size:19px;">${DB.settings.companyName}</div>
+      <div style="font-size:10px;color:#555;">${DB.settings.address||''}${DB.settings.phone?' · '+DB.settings.phone:''}${DB.settings.nuit?' · NUIT: '+DB.settings.nuit:''}</div>
+      <div style="font-weight:700;font-size:14px;letter-spacing:.5px;margin-top:10px;border-top:1px solid #333;border-bottom:1px solid #333;padding:6px 0;">${title}</div>
+      ${subtitle? `<div style="font-size:11px;color:#555;margin-top:4px;">${subtitle}</div>`:''}
+    </div>`;
+}
+function printDocFooter(){
+  return `<div style="text-align:center;font-size:9.5px;color:#777;margin-top:20px;">Emitido em ${fmtDateLong(today())} · Documento de apoio à gestão — não substitui a contabilidade oficial.</div>`;
+}
+function monthLabel(ym){
+  const [y,m]=ym.split('-');
+  const names=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  return names[Number(m)-1]+' de '+y;
+}
+function printContabilidade(){
+  const monthSales = DB.sales.filter(s=>s.date.slice(0,7)===contabMonth);
+  const monthExpenses = DB.expenses.filter(e=>e.date.slice(0,7)===contabMonth);
+  let body = '';
+  if(contabTab==='balancete'){
+    const d = computeBalancete(monthSales, monthExpenses);
+    body = printDocHeader('Balancete Simplificado', monthLabel(contabMonth)) + `
+      <div style="max-width:420px;margin:0 auto;font-size:12px;">
+        <div style="font-weight:700;margin:10px 0 4px;">Débitos</div>
+        ${d.debitos.map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #ccc;"><span>${k}</span><span>${fmt(v)}</span></div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-weight:700;padding:5px 0;"><span>Total débitos</span><span>${fmt(d.totalDeb)}</span></div>
+        <div style="font-weight:700;margin:12px 0 4px;">Créditos</div>
+        ${d.creditos.map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #ccc;"><span>${k}</span><span>${fmt(v)}</span></div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-weight:700;padding:5px 0;"><span>Total créditos</span><span>${fmt(d.totalCred)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;margin-top:10px;border-top:1px solid #333;padding-top:6px;"><span>Resultado do mês</span><span>${fmt(d.resultado)}</span></div>
+        <div style="font-weight:700;margin:14px 0 4px;">Disponibilidades por meio de pagamento</div>
+        ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dashed #ccc;"><span>${m}</span><span>${fmt(d.disponibilidades[m]||0)}</span></div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:10px;"><span>Existências (custo, posição atual)</span><span>${fmt(d.valorInventario)}</span></div>
+      </div>`;
+  } else if(contabTab==='iva'){
+    const d = computeIva(monthSales, monthExpenses);
+    body = printDocHeader('Apuramento de IVA', monthLabel(contabMonth)+' · Taxa '+d.rate+'%') + `
+      <div style="max-width:420px;margin:0 auto;font-size:12px;">
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>IVA liquidado (sobre vendas)</span><span>${fmt(d.ivaLiquidado)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>IVA dedutível (sobre compras)</span><span>${fmt(d.ivaDedutivel)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;margin-top:10px;border-top:1px solid #333;padding-top:6px;"><span>${d.apurado>=0?'IVA a pagar':'Crédito de IVA'}</span><span>${fmt(Math.abs(d.apurado))}</span></div>
+      </div>`;
+  } else if(contabTab==='irpc'){
+    const d = computeIrpc(monthSales, monthExpenses);
+    body = printDocHeader('Estimativa de IRPC', monthLabel(contabMonth)+' · Taxa '+d.rate+'%') + `
+      <div style="max-width:420px;margin:0 auto;font-size:12px;">
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>Receita do mês</span><span>${fmt(d.receita)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>Custos e despesas</span><span>${fmt(d.custosTotal)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px dashed #ccc;"><span>Lucro tributável (estimado)</span><span>${fmt(d.lucroTributavel)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;margin-top:10px;border-top:1px solid #333;padding-top:6px;"><span>IRPC estimado</span><span>${fmt(d.irpcEstimado)}</span></div>
+      </div>`;
+  } else { return; }
+  document.getElementById('print-area').innerHTML = body + printDocFooter();
+  setTimeout(()=>window.print(), 150);
+}
+
+function renderDespesas(el, monthExpenses){
+  el.innerHTML = `
+    <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openExpenseModal()">${ic('plus',14)} Nova despesa</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>IVA</th><th></th></tr></thead>
+      <tbody>
+        ${monthExpenses.map(e=>`<tr>
+          <td>${fmtDate(e.date)}</td><td>${e.description}</td><td>${e.category}</td><td><strong>${fmt(e.amount)}</strong></td>
+          <td>${e.hasVat? fmt(e.vatAmount) : '—'}</td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openExpenseModal('${e.id}')">${ic('edit',13)}</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Sem despesas registadas neste mês.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+}
+function openExpenseModal(id){
+  const e = id ? DB.expenses.find(x=>x.id===id) : null;
+  const cats = ['Compra de produtos','Renda','Salários','Serviços (água, luz, internet)','Marketing','Manutenção','Outras'];
+  openModal(e?'Editar despesa / compra':'Nova despesa / compra', `
+    <div class="field"><label>Descrição</label><input id="f-edesc" value="${e?e.description:''}" placeholder="Ex: Compra de produtos ao fornecedor"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Categoria</label><select id="f-ecat">${cats.map(c=>`<option ${e&&e.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Data</label><input type="date" id="f-edate" value="${e?e.date:today()}"></div>
+    </div>
+    <div class="field"><label>Valor total (MT)</label><input type="number" id="f-eamount" value="${e?e.amount:0}"></div>
+    <div class="field"><label><input type="checkbox" id="f-ehasvat" ${e&&e.hasVat?'checked':''} onchange="document.getElementById('f-evatwrap').style.display=this.checked?'block':'none'"> Despesa com IVA dedutível</label></div>
+    <div class="field" id="f-evatwrap" style="display:${e&&e.hasVat?'block':'none'};"><label>Valor do IVA incluído</label><input type="number" id="f-evat" value="${e?e.vatAmount:0}"></div>
+  `, `
+    ${e? `<button class="btn btn-danger" onclick="deleteExpense('${e.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveExpense(${e?`'${e.id}'`:'null'})">Guardar</button>
+  `);
+}
+function saveExpense(id){
+  const description = document.getElementById('f-edesc').value.trim();
+  if(!description){ toast('Indique uma descrição.','bad'); return; }
+  const hasVat = document.getElementById('f-ehasvat').checked;
+  const data = {
+    description, category:document.getElementById('f-ecat').value, date:document.getElementById('f-edate').value,
+    amount:Number(document.getElementById('f-eamount').value)||0, hasVat, vatAmount: hasVat? Number(document.getElementById('f-evat').value)||0 : 0,
+  };
+  if(id){ Object.assign(DB.expenses.find(e=>e.id===id), data); toast('Despesa atualizada.'); }
+  else { DB.expenses.push({id:uid(), ...data}); toast('Despesa registada.'); }
+  save(); closeModal(); navigate('contabilidade');
+}
+function deleteExpense(id){
+  confirmAction('Eliminar esta despesa?', ()=>{ DB.expenses = DB.expenses.filter(e=>e.id!==id); save(); toast('Despesa eliminada.','bad'); navigate('contabilidade'); });
+}
+
+/* =========================================================================
+   CONFIGURAÇÕES
+   ========================================================================= */
+RENDERERS.config = function(el){
+  el.innerHTML = `
+    <div class="panel" style="max-width:480px;">
+      <h3 style="margin-top:0;font-size:14px;">Dados da empresa</h3>
+      <div class="field"><label>Nome</label><input id="f-company" value="${DB.settings.companyName}"></div>
+      <div class="field"><label>Morada</label><input id="f-address" value="${DB.settings.address}"></div>
+      <div class="field"><label>Telefone</label><input id="f-cphone" value="${DB.settings.phone}"></div>
+      <div class="field"><label>NUIT</label><input id="f-nuit" value="${DB.settings.nuit||''}"></div>
+      <button class="btn btn-primary" onclick="saveSettings()">Guardar</button>
+    </div>
+    <div class="panel" style="max-width:480px;">
+      <h3 style="margin-top:0;font-size:14px;">Taxas fiscais</h3>
+      <div class="field-row cols-2">
+        <div class="field"><label>Taxa de IVA (%)</label><input type="number" id="f-ivarate" value="${DB.settings.ivaRate}"></div>
+        <div class="field"><label>Taxa de IRPC (%)</label><input type="number" id="f-irpcrate" value="${DB.settings.irpcRate}"></div>
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()">Guardar</button>
+      <p style="font-size:11px;color:var(--ink-soft);margin-top:10px;">Usadas no módulo de Contabilidade. Valores por defeito refletem as taxas gerais em vigor em Moçambique (16% IVA, 32% IRPC) — ajuste se o seu regime for diferente.</p>
+    </div>
+    <div class="panel" style="max-width:480px;">
+      <h3 style="margin-top:0;font-size:14px;">Utilizadores</h3>
+      <p style="font-size:12.5px;color:var(--ink-soft);">A criação, edição e remoção de utilizadores é feita no módulo <strong>Utilizadores</strong> (apenas Administrador).</p>
+      <button class="btn" onclick="navigate('usuarios')">Ir para Utilizadores</button>
+    </div>
+    <div class="panel" style="max-width:480px;border-color:var(--warn);">
+      <h3 style="margin-top:0;font-size:14px;color:var(--warn);">Reiniciar dados financeiros</h3>
+      <p style="font-size:12px;color:var(--ink-soft);">Apaga todas as <strong>vendas</strong>, todo o histórico de <strong>caixa</strong> e todas as <strong>despesas</strong> (usados no Balancete, IVA e IRPC). Clientes, serviços, produtos, profissionais, estoque, pacotes e utilizadores não são afetados. Útil, por exemplo, para começar um novo ano fiscal.</p>
+      <button class="btn btn-danger" style="border-color:var(--warn);color:var(--warn);" onclick="resetFinancialData()">Reiniciar vendas, caixa e despesas</button>
+    </div>
+    <div class="panel" style="max-width:480px;border-color:var(--bad);">
+      <h3 style="margin-top:0;font-size:14px;color:var(--bad);">Repor tudo</h3>
+      <p style="font-size:12px;color:var(--ink-soft);">Elimina TODOS os dados guardados neste dispositivo (clientes, agenda, catálogo, utilizadores, tudo) e pede uma nova configuração inicial.</p>
+      <button class="btn btn-danger" style="border-color:var(--bad);" onclick="resetAll()">Repor tudo</button>
+    </div>
+  `;
+};
+function saveSettings(){
+  DB.settings.companyName = document.getElementById('f-company').value;
+  DB.settings.address = document.getElementById('f-address').value;
+  DB.settings.phone = document.getElementById('f-cphone').value;
+  DB.settings.nuit = document.getElementById('f-nuit').value;
+  DB.settings.ivaRate = Number(document.getElementById('f-ivarate').value)||0;
+  DB.settings.irpcRate = Number(document.getElementById('f-irpcrate').value)||0;
+  save(); toast('Definições guardadas.');
+}
+function resetFinancialData(){
+  confirmAction('Isto irá apagar permanentemente todas as vendas, todo o histórico de caixa e todas as despesas registadas. Clientes, serviços, produtos, profissionais, estoque e pacotes de clientes não são afetados. Esta ação não pode ser desfeita. Continuar?', ()=>{
+    DB.sales = [];
+    DB.cashSessions = [];
+    DB.expenses = [];
+    DB.settings.nextInvoice = 1;
+    save();
+    toast('Vendas, caixa e despesas repostos.','bad');
+    navigate('dashboard');
+  });
+}
+function resetAll(){
+  confirmAction('Isto irá eliminar TODOS os dados reais guardados neste dispositivo (clientes, vendas, agenda, tudo) e pedir uma nova configuração inicial. Esta ação não pode ser desfeita. Continuar?', ()=>{
+    localStorage.removeItem(DB_KEY);
+    location.reload();
+  });
+}
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+document.getElementById('login-logo').src = LOGO_B64;
+document.getElementById('side-logo').src = LOGO_B64;
+document.getElementById('setup-logo').src = LOGO_B64;
+setupPWA();
+updateSyncBadge('local');
+initFirebaseAndBoot();
+function finishSetup(){
+  const err = document.getElementById('setup-err');
+  const companyName = document.getElementById('s-company').value.trim();
+  const adminName = document.getElementById('s-admin-name').value.trim();
+  const adminPin = document.getElementById('s-admin-pin').value.trim();
+  if(!companyName){ err.textContent='Indique o nome da empresa.'; return; }
+  if(!adminName){ err.textContent='Indique o seu nome.'; return; }
+  if(!/^\d{4}$/.test(adminPin)){ err.textContent='O PIN deve ter exatamente 4 dígitos.'; return; }
+  DB = bootstrapDB(
+    {name:companyName, phone:document.getElementById('s-phone').value.trim(), nuit:document.getElementById('s-nuit').value.trim(), address:document.getElementById('s-address').value.trim()},
+    {name:adminName, pin:adminPin}
+  );
+  save();
+  if(fbDocRef) pushToFirebase();
+  document.getElementById('setup-screen').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  initLogin();
+  toast('Sistema criado. Inicie sessão com o PIN que definiu.');
+}
+
+/* -------- PWA: installable app icon + offline shell caching -------- */
+function setupPWA(){
+  try{
+    // Web App Manifest (built in-memory so the app stays a single file)
+    const manifest = {
+      name: 'RENW Skin Renewal — Gestão',
+      short_name: 'RENW Gestão',
+      start_url: './',
+      display: 'standalone',
+      background_color: '#EDE7DD',
+      theme_color: '#B9AD9C',
+      icons: [{ src: LOGO_B64, sizes: '260x260', type: 'image/jpeg', purpose: 'any maskable' }],
+    };
+    const manifestBlob = new Blob([JSON.stringify(manifest)], {type:'application/manifest+json'});
+    const link = document.createElement('link');
+    link.rel = 'manifest';
+    link.href = URL.createObjectURL(manifestBlob);
+    document.head.appendChild(link);
+
+    // Apple touch icon
+    const touchIcon = document.createElement('link');
+    touchIcon.rel = 'apple-touch-icon';
+    touchIcon.href = LOGO_B64;
+    document.head.appendChild(touchIcon);
+
+    // Minimal service worker: caches this page so it opens even without a
+    // network connection after the first visit (offline-first).
+    if('serviceWorker' in navigator){
+      const swCode = `
+        const CACHE = 'rnw-erp-shell-v1';
+        self.addEventListener('install', e => { self.skipWaiting(); });
+        self.addEventListener('activate', e => { self.clients.claim(); });
+        self.addEventListener('fetch', e => {
+          if(e.request.method !== 'GET') return;
+          e.respondWith(
+            caches.open(CACHE).then(cache =>
+              cache.match(e.request).then(cached => {
+                const network = fetch(e.request).then(res => { if(res && res.ok) cache.put(e.request, res.clone()); return res; }).catch(()=>cached);
+                return cached || network;
+              })
+            )
+          );
+        });
+      `;
+      const swBlob = new Blob([swCode], {type:'application/javascript'});
+      navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(()=>{});
+    }
+  }catch(e){ /* PWA setup is a progressive enhancement; app still works fully offline via localStorage */ }
+}
+</script>
+</body>
+</html>

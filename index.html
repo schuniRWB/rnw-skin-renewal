@@ -628,6 +628,7 @@ function migrate(db){
   db.users.forEach(u=>{ if(!u.id) u.id = uid(); });
   db.clients.forEach(c=>{ if(c.special==null) c.special = false; if(c.superClient==null) c.superClient = false; });
   db.stockMovements.forEach(m=>{ if(m.supplierId===undefined) m.supplierId = null; });
+  db.products.forEach(p=>{ if(p.supplierId===undefined) p.supplierId = null; });
   db.sales.forEach(s=>{ if(!s.installments) s.installments = []; });
   return db;
 }
@@ -1212,11 +1213,12 @@ RENDERERS.produtos = function(el){
     <div class="pill-tabs">${cats.map(c=>`<button class="pill-tab ${c===produtoCat?'active':''}" onclick="produtoCat='${c}';navigate('produtos')">${c}</button>`).join('')}</div>
     <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openProductModal()">${ic('plus',14)} Novo produto</button></div></div>
     <div class="table-wrap">
-      <table><thead><tr><th>Produto</th><th>Categoria</th><th>Preço venda</th><th>Custo</th><th>Stock</th><th></th></tr></thead>
+      <table><thead><tr><th>Produto</th><th>Categoria</th><th>Fornecedor</th><th>Preço venda</th><th>Custo</th><th>Stock</th><th></th></tr></thead>
       <tbody>
-        ${list.map(p=>`<tr>
+        ${list.map(p=>{ const sup = DB.suppliers.find(s=>s.id===p.supplierId); return `<tr>
           <td><strong>${p.name}</strong></td>
           <td>${p.category}</td>
+          <td>${sup? sup.name : `<span class="tag tag-bad">Sem fornecedor</span>`}</td>
           <td><strong>${fmt(p.price)}</strong></td>
           <td>${fmt(p.cost)}</td>
           <td>${p.stock<=p.minStock?`<span class="tag tag-bad">${p.stock} ${p.unit}</span>`:`${p.stock} ${p.unit}`}</td>
@@ -1224,16 +1226,24 @@ RENDERERS.produtos = function(el){
             <button class="btn btn-sm" onclick="openProductModal('${p.id}')">${ic('edit',13)}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteProduct('${p.id}')">${ic('trash',13)}</button>
           </td>
-        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Nenhum produto nesta categoria.</td></tr>`}
+        </tr>`; }).join('') || `<tr class="empty-row"><td colspan="7">Nenhum produto nesta categoria.</td></tr>`}
       </tbody></table>
     </div>
   `;
 };
 function openProductModal(id){
   const p = id ? DB.products.find(x=>x.id===id) : null;
+  if(!DB.suppliers.length){
+    openModal('Novo produto', `<p style="font-size:13px;color:var(--ink-soft);">Todo o produto precisa de um fornecedor. Registe primeiro um fornecedor em <strong>Fornecedores</strong> e volte aqui para criar o produto.</p>`,
+      `<button class="btn" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="closeModal();navigate('fornecedores')">Ir para Fornecedores</button>`);
+    return;
+  }
   openModal(p?'Editar produto':'Novo produto', `
     <div class="field"><label>Nome</label><input id="f-name" value="${p?p.name:''}"></div>
-    <div class="field"><label>Categoria</label><select id="f-cat">${PRODUCT_CATS.map(c=>`<option ${p&&p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Categoria</label><select id="f-cat">${PRODUCT_CATS.map(c=>`<option ${p&&p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+      <div class="field"><label>Fornecedor</label><select id="f-supplier">${DB.suppliers.map(s=>`<option value="${s.id}" ${p&&p.supplierId===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
+    </div>
     <div class="field-row cols-2">
       <div class="field"><label>Preço de venda</label><input type="number" id="f-price" value="${p?p.price:0}"></div>
       <div class="field"><label>Custo</label><input type="number" id="f-cost" value="${p?p.cost:0}"></div>
@@ -1251,8 +1261,10 @@ function openProductModal(id){
 function saveProduct(id){
   const name = document.getElementById('f-name').value.trim();
   if(!name){ toast('Indique o nome do produto.','bad'); return; }
+  const supplierId = document.getElementById('f-supplier').value;
+  if(!supplierId){ toast('Selecione o fornecedor do produto.','bad'); return; }
   const data = {
-    name, category:document.getElementById('f-cat').value,
+    name, category:document.getElementById('f-cat').value, supplierId,
     price:Number(document.getElementById('f-price').value)||0,
     cost:Number(document.getElementById('f-cost').value)||0,
     stock:Number(document.getElementById('f-stock').value)||0,
@@ -1340,14 +1352,13 @@ RENDERERS.fornecedores = function(el){
       <table><thead><tr><th>Nome</th><th>Contacto</th><th>Telefone</th><th>Email</th><th>Produtos fornecidos</th><th></th></tr></thead>
       <tbody>
         ${DB.suppliers.map(s=>{
-          const entradas = DB.stockMovements.filter(m=>m.supplierId===s.id && m.type==='entrada');
-          const productIds = [...new Set(entradas.map(m=>m.productId))];
+          const products = DB.products.filter(p=>p.supplierId===s.id);
           return `<tr>
             <td><strong>${s.name}</strong>${s.notes?`<div style="font-size:11px;color:var(--ink-soft);">${s.notes}</div>`:''}</td>
             <td>${s.contact||'—'}</td>
             <td>${s.phone||'—'}</td>
             <td>${s.email||'—'}</td>
-            <td>${productIds.length? `<span class="tag tag-good">${productIds.length} produto(s)</span>` : '—'}</td>
+            <td>${products.length? `<span class="tag tag-good">${products.length} produto(s)</span>` : '—'}${products.length? `<div style="font-size:10.5px;color:var(--ink-soft);margin-top:3px;">${products.slice(0,3).map(p=>p.name).join(', ')}${products.length>3?'…':''}</div>` : ''}</td>
             <td style="white-space:nowrap;">
               <button class="btn btn-sm" onclick="openSupplierModal('${s.id}')">${ic('edit',13)}</button>
               <button class="btn btn-sm btn-danger" onclick="deleteSupplier('${s.id}')">${ic('trash',13)}</button>
@@ -1356,7 +1367,7 @@ RENDERERS.fornecedores = function(el){
         }).join('') || `<tr class="empty-row"><td colspan="6">Nenhum fornecedor registado.</td></tr>`}
       </tbody></table>
     </div>
-    <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">O fornecedor de cada entrada de stock é escolhido no módulo Estoque → Movimento de stock. Assim, o mesmo produto pode ter entradas de fornecedores diferentes ao longo do tempo.</p>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">Cada produto tem um fornecedor principal (definido em Produtos). Um fornecedor pode fornecer vários produtos. As entradas de stock também podem indicar o fornecedor dessa reposição específica, em Estoque → Movimento de stock.</p>
   `;
 };
 function openSupplierModal(id){
@@ -1384,8 +1395,13 @@ function saveSupplier(id){
   save(); closeModal(); navigate('fornecedores');
 }
 function deleteSupplier(id){
-  const hasHistory = DB.stockMovements.some(m=>m.supplierId===id);
-  const msg = hasHistory
+  const linkedProducts = DB.products.filter(p=>p.supplierId===id);
+  const hasMovements = DB.stockMovements.some(m=>m.supplierId===id);
+  if(linkedProducts.length){
+    toast(`Não é possível eliminar: ${linkedProducts.length} produto(s) têm este fornecedor. Altere o fornecedor desses produtos primeiro.`,'bad');
+    return;
+  }
+  const msg = hasMovements
     ? 'Este fornecedor tem entradas de stock associadas. O histórico de movimentos não será apagado, mas deixará de estar ligado a um nome de fornecedor. Eliminar mesmo assim?'
     : 'Eliminar este fornecedor?';
   confirmAction(msg, ()=>{

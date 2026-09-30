@@ -113,7 +113,7 @@ a{color:inherit;}
 .side-foot{margin-top:auto;padding-top:14px;border-top:1px solid rgba(42,36,32,.15);}
 .side-user{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:12.5px;font-weight:600;}
 .side-user .dot{width:7px;height:7px;border-radius:50%;background:var(--good);}
-.logout-btn{font-size:11.5px;color:var(--ink-soft);background:none;border:none;cursor:pointer;padding:6px 8px;text-decoration:underline;}
+.logout-btn{font-size:11.5px;color:var(--ink-soft);background:none;border:none;cursor:pointer;padding:6px 8px;text-decoration:underline;display:block;text-align:left;}
 
 .main{flex:1;min-width:0;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
 .topbar{
@@ -342,6 +342,7 @@ tbody tr:hover{background:#f5f1ea;}
     <nav id="nav-list"></nav>
     <div class="side-foot">
       <div class="side-user"><span class="dot"></span><span id="side-user-name">—</span></div>
+      <button class="logout-btn" onclick="openChangePinModal()">Alterar PIN</button>
       <button class="logout-btn" onclick="logout()">Terminar sessão</button>
     </div>
   </div>
@@ -629,7 +630,7 @@ function migrate(db){
   db.clients.forEach(c=>{ if(c.special==null) c.special = false; if(c.superClient==null) c.superClient = false; });
   db.stockMovements.forEach(m=>{ if(m.supplierId===undefined) m.supplierId = null; });
   db.products.forEach(p=>{ if(p.supplierId===undefined) p.supplierId = null; });
-  db.sales.forEach(s=>{ if(!s.installments) s.installments = []; });
+  db.sales.forEach(s=>{ if(!s.installments) s.installments = []; if(s.issuedBy===undefined) s.issuedBy=''; if(s.notes===undefined) s.notes=''; });
   return db;
 }
 function save(){ localStorage.setItem(DB_KEY, JSON.stringify(DB)); scheduleFirebaseSave(); }
@@ -722,6 +723,30 @@ function logout(){
   document.getElementById('app').classList.remove('show');
   document.getElementById('login-screen').style.display='flex';
   initLogin();
+}
+function openChangePinModal(){
+  openModal('Alterar PIN', `
+    <p style="font-size:12.5px;color:var(--ink-soft);margin-top:0;">A alterar o PIN de <strong>${session.name}</strong> (${session.role}).</p>
+    <div class="field"><label>PIN atual</label><input type="password" id="f-pin-old" maxlength="4" inputmode="numeric"></div>
+    <div class="field"><label>Novo PIN (4 dígitos)</label><input type="password" id="f-pin-new" maxlength="4" inputmode="numeric"></div>
+    <div class="field"><label>Confirmar novo PIN</label><input type="password" id="f-pin-confirm" maxlength="4" inputmode="numeric"></div>
+    <div class="login-err" id="pin-change-err"></div>
+  `, `<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveNewPin()">Guardar</button>`);
+}
+function saveNewPin(){
+  const err = document.getElementById('pin-change-err');
+  const oldPin = document.getElementById('f-pin-old').value.trim();
+  const newPin = document.getElementById('f-pin-new').value.trim();
+  const confirmPin = document.getElementById('f-pin-confirm').value.trim();
+  if(oldPin !== session.pin){ err.textContent='PIN atual incorreto.'; return; }
+  if(!/^\d{4}$/.test(newPin)){ err.textContent='O novo PIN deve ter exatamente 4 dígitos.'; return; }
+  if(newPin !== confirmPin){ err.textContent='Os PINs não coincidem.'; return; }
+  const clash = DB.users.find(u=>u.role===session.role && u.pin===newPin && u.id!==session.id);
+  if(clash){ err.textContent='Já existe outro utilizador com este PIN neste perfil.'; return; }
+  const user = DB.users.find(u=>u.id===session.id);
+  user.pin = newPin;
+  session.pin = newPin;
+  save(); closeModal(); toast('PIN alterado com sucesso.');
 }
 
 /* =========================================================================
@@ -1669,6 +1694,7 @@ function finalizeSale(){
     id:uid(), invoice:DB.settings.nextInvoice, docType, date:today(), time:nowTime(),
     clientId: posClientId||null, items:cart.map(i=>({...i})), subtotal:cartTotal(), discount, total,
     paymentMethod, installments, professionalId: professionalId||null, cashSessionId: openSession? openSession.id : null,
+    issuedBy: session? session.name : '', notes:'',
   };
   DB.sales.push(sale);
   DB.settings.nextInvoice++;
@@ -1694,7 +1720,7 @@ function printReceipt(sale){
       <div style="text-align:center;font-weight:700;font-size:12px;letter-spacing:1px;border-top:1px solid #333;border-bottom:1px solid #333;padding:5px 0;margin:8px 0 6px;">${docLabel}</div>
       <div style="font-size:11px;padding:2px 0 8px;">
         Nº ${String(sale.invoice).padStart(5,'0')} · ${fmtDate(sale.date)} ${sale.time}<br>
-        Cliente: ${client}${prof? `<br>Atendido por: ${prof}`:''}
+        Cliente: ${client}${prof? `<br>Atendido por: ${prof}`:''}${sale.issuedBy? `<br>Emitido por: ${sale.issuedBy}`:''}
       </div>
       <div style="border-top:1px dashed #999;padding-top:6px;">
       ${sale.items.map(i=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${i.qty}x ${i.name}</span><span>${fmt(i.price*i.qty)}</span></div>`).join('')}
@@ -1847,7 +1873,7 @@ RENDERERS.relatorios = function(el){
     </div>
     <div class="section-head"><h2>Faturas / recibos emitidos</h2></div>
     <div class="table-wrap">
-      <table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Documento</th><th>Pagamento</th><th>Total</th><th></th></tr></thead>
+      <table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Documento</th><th>Pagamento</th><th>Emitido por</th><th>Total</th><th></th></tr></thead>
       <tbody>
         ${[...sales].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).map(s=>`<tr>
           <td>${String(s.invoice).padStart(5,'0')}</td>
@@ -1855,9 +1881,10 @@ RENDERERS.relatorios = function(el){
           <td>${s.clientId? clientName(s.clientId) : 'Cliente avulso'}</td>
           <td>${s.docType||'Fatura-Recibo'}</td>
           <td>${s.paymentMethod}</td>
+          <td>${s.issuedBy||'—'}</td>
           <td><strong>${fmt(s.total)}</strong></td>
           <td><button class="btn btn-sm" onclick="reprintSale('${s.id}')">Reimprimir</button></td>
-        </tr>`).join('') || `<tr class="empty-row"><td colspan="7">Sem vendas registadas no período.</td></tr>`}
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="8">Sem vendas registadas no período.</td></tr>`}
       </tbody></table>
     </div>
   `;
@@ -2289,6 +2316,13 @@ RENDERERS.config = function(el){
       <p style="font-size:12.5px;color:var(--ink-soft);">A criação, edição e remoção de utilizadores é feita no módulo <strong>Utilizadores</strong> (apenas Administrador).</p>
       <button class="btn" onclick="navigate('usuarios')">Ir para Utilizadores</button>
     </div>
+    <div class="panel" style="max-width:480px;">
+      <h3 style="margin-top:0;font-size:14px;">Importar dados</h3>
+      <p style="font-size:12px;color:var(--ink-soft);">Importa clientes, vendas, despesas e/ou produtos a partir de um ficheiro .json preparado previamente. Novos registos são adicionados aos já existentes — clientes já registados (mesmo nome) não são duplicados.</p>
+      <div class="field"><input type="file" id="f-importfile" accept=".json,application/json"></div>
+      <button class="btn btn-primary" onclick="importData()">Importar ficheiro</button>
+      <div id="import-result" style="font-size:12px;margin-top:10px;"></div>
+    </div>
     <div class="panel" style="max-width:480px;border-color:var(--warn);">
       <h3 style="margin-top:0;font-size:14px;color:var(--warn);">Reiniciar dados financeiros</h3>
       <p style="font-size:12px;color:var(--ink-soft);">Apaga todas as <strong>vendas</strong>, todo o histórico de <strong>caixa</strong> e todas as <strong>despesas</strong> (usados no Balancete, IVA e IRPC). Clientes, serviços, produtos, profissionais, estoque, pacotes e utilizadores não são afetados. Útil, por exemplo, para começar um novo ano fiscal.</p>
@@ -2309,6 +2343,82 @@ function saveSettings(){
   DB.settings.ivaRate = Number(document.getElementById('f-ivarate').value)||0;
   DB.settings.irpcRate = Number(document.getElementById('f-irpcrate').value)||0;
   save(); toast('Definições guardadas.');
+}
+function importData(){
+  const fileInput = document.getElementById('f-importfile');
+  const resultEl = document.getElementById('import-result');
+  const file = fileInput.files[0];
+  if(!file){ toast('Escolha um ficheiro .json primeiro.','bad'); return; }
+  const reader = new FileReader();
+  reader.onload = function(e){
+    let payload;
+    try{ payload = JSON.parse(e.target.result); }
+    catch(err){ resultEl.innerHTML = '<span style="color:var(--bad)">Ficheiro inválido — não é um JSON válido.</span>'; return; }
+    confirmAction('Vai adicionar estes dados à base de dados atual. Não repita a importação do mesmo ficheiro (duplicaria vendas/despesas). Continuar?', ()=>{
+      const counts = {clients:0, products:0, sales:0, expenses:0};
+      const nameToClientId = {};
+      DB.clients.forEach(c=>{ nameToClientId[c.name.trim().toLowerCase()] = c.id; });
+
+      (payload.clients||[]).forEach(c=>{
+        const key = (c.name||'').trim().toLowerCase();
+        if(!key) return;
+        if(nameToClientId[key]) return; // already exists, skip
+        const id = uid();
+        DB.clients.push({
+          id, name:c.name.trim(), phone:c.phone||'', email:c.email||'', birthday:c.birthday||'',
+          notes:c.notes||'', special:!!c.special, superClient:!!c.superClient,
+          createdAt: c.firstSeenDate || today(),
+        });
+        nameToClientId[key] = id;
+        counts.clients++;
+      });
+
+      const existingProductNames = new Set(DB.products.map(p=>p.name.trim().toLowerCase()));
+      (payload.products||[]).forEach(p=>{
+        const key = (p.name||'').trim().toLowerCase();
+        if(!key || existingProductNames.has(key)) return;
+        DB.products.push({
+          id:uid(), name:p.name.trim(), category:p.category||PRODUCT_CATS[0], supplierId:null,
+          price:Number(p.price)||0, cost:Number(p.cost)||0, stock:Math.max(0,Number(p.stock)||0),
+          minStock:Number(p.minStock)||3, unit:p.unit||'un',
+        });
+        existingProductNames.add(key);
+        counts.products++;
+      });
+
+      (payload.sales||[]).forEach(s=>{
+        const clientId = s.clientName ? (nameToClientId[s.clientName.trim().toLowerCase()]||null) : null;
+        const installments = (s.installments||[]).map((inst,idx)=>({
+          id:uid(), n:idx+1, of:(s.installments||[]).length, amount:inst.amount, dueDate:inst.dueDate||s.date,
+          status:inst.status||'pendente', paidDate:inst.paidDate||null,
+        }));
+        DB.sales.push({
+          id:uid(), invoice:DB.settings.nextInvoice, docType:s.docType||'Fatura-Recibo',
+          date:s.date, time:s.time||'12:00', clientId,
+          items:(s.items||[]).map(i=>({type:i.type||'product', refId:null, name:i.name, category:i.category||null, price:Number(i.price)||0, qty:Number(i.qty)||1, openPrice:!!i.openPrice})),
+          subtotal:Number(s.subtotal)||0, discount:Number(s.discount)||0, total:Number(s.total)||0,
+          paymentMethod:s.paymentMethod||'Numerário', installments,
+          professionalId:null, cashSessionId:null, issuedBy:'Importação', notes:s.notes||'',
+        });
+        DB.settings.nextInvoice++;
+        counts.sales++;
+      });
+
+      (payload.expenses||[]).forEach(ex=>{
+        DB.expenses.push({
+          id:uid(), description:ex.description||'', category:ex.category||'Outras', date:ex.date||today(),
+          amount:Number(ex.amount)||0, hasVat:!!ex.hasVat, vatAmount:Number(ex.vatAmount)||0,
+        });
+        counts.expenses++;
+      });
+
+      save();
+      resultEl.innerHTML = `<span style="color:var(--good)">Importado: ${counts.clients} cliente(s), ${counts.products} produto(s), ${counts.sales} venda(s), ${counts.expenses} despesa(s).</span>`;
+      toast('Importação concluída.');
+      fileInput.value = '';
+    });
+  };
+  reader.readAsText(file);
 }
 function resetFinancialData(){
   confirmAction('Isto irá apagar permanentemente todas as vendas, todo o histórico de caixa e todas as despesas registadas. Clientes, serviços, produtos, profissionais, estoque e pacotes de clientes não são afetados. Esta ação não pode ser desfeita. Continuar?', ()=>{

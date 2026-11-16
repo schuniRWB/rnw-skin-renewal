@@ -434,6 +434,7 @@ const ICONS = {
 function ic(name,size=16){return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
 
 const PAY_METHODS = ['Numerário','M-Pesa','E-Mola','Cartão POS','Transferência','Pagamento Parcelado','Crédito (Super Cliente)'];
+const EXPENSE_SOURCES = ['Numerário (Caixa)','Petty Cash','Transferência Bancária','M-Pesa','E-Mola','Outro'];
 const PRODUCT_CATS = ['Pele','Cabelo','Corpo','Suplementação'];
 const SERVICE_CATS_DEFAULT = ['Depilação a Laser','Microagulhamento','Limpeza de Pele'];
 function serviceCats(){ return DB.serviceCategories || SERVICE_CATS_DEFAULT; }
@@ -598,7 +599,7 @@ function bootstrapDB(company, admin){
   return {
     clients: [], professionals: [], services, products, clientPackages: [],
     appointments: [], sales: [], stockMovements: [], expenses: [], cashSessions: [],
-    suppliers: [], serviceCategories: [...SERVICE_CATS_DEFAULT],
+    suppliers: [], serviceCategories: [...SERVICE_CATS_DEFAULT], pettyCash: {fundEntries:[]},
     users: [{id:uid(), name:admin.name, role:'Administrador', pin:admin.pin}],
     settings: {
       companyName: company.name || 'RENW Skin Renewal',
@@ -630,7 +631,9 @@ function migrate(db){
   db.clients.forEach(c=>{ if(c.special==null) c.special = false; if(c.superClient==null) c.superClient = false; });
   db.stockMovements.forEach(m=>{ if(m.supplierId===undefined) m.supplierId = null; });
   db.products.forEach(p=>{ if(p.supplierId===undefined) p.supplierId = null; });
-  db.sales.forEach(s=>{ if(!s.installments) s.installments = []; if(s.issuedBy===undefined) s.issuedBy=''; if(s.notes===undefined) s.notes=''; });
+  db.sales.forEach(s=>{ if(!s.installments) s.installments = []; if(s.issuedBy===undefined) s.issuedBy=''; if(s.notes===undefined) s.notes=''; if(s.editedBy===undefined) s.editedBy=''; if(s.editedAt===undefined) s.editedAt=''; });
+  db.pettyCash = db.pettyCash || {fundEntries:[]};
+  db.expenses.forEach(e=>{ if(e.paymentSource===undefined) e.paymentSource = 'Outro'; if(e.cashSessionId===undefined) e.cashSessionId = null; });
   return db;
 }
 function save(){ localStorage.setItem(DB_KEY, JSON.stringify(DB)); scheduleFirebaseSave(); }
@@ -1647,19 +1650,9 @@ function updateCheckoutTotal(){
   const d = Number(document.getElementById('f-discount').value)||0;
   document.getElementById('checkout-total').textContent = fmt(Math.max(0,cartTotal()-d));
 }
-function finalizeSale(){
-  const discount = Number(document.getElementById('f-discount').value)||0;
-  const paymentMethod = document.getElementById('f-paymethod').value;
-  const professionalId = document.getElementById('f-payprof').value;
-  const docType = document.getElementById('f-doctype').value;
-  const total = Math.max(0, cartTotal()-discount);
-  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
-  const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
-
-  if(paymentMethod==='Crédito (Super Cliente)' && !(client && client.superClient)){
-    toast('Selecione um cliente marcado como Super Cliente para usar Crédito.','bad'); return;
-  }
-
+function buildInstallments(paymentMethod, total, el){
+  // el: prefix element scope not needed since ids are fixed per modal; reads from whichever
+  // installment-field ids are currently in the DOM (checkout or edit-sale modal share the same ids).
   let installments = [];
   if(paymentMethod==='Pagamento Parcelado'){
     const n = Math.max(2, Number(document.getElementById('f-installments').value)||2);
@@ -1677,6 +1670,22 @@ function finalizeSale(){
   } else if(paymentMethod==='Crédito (Super Cliente)'){
     installments.push({id:uid(), n:1, of:1, amount:total, dueDate:today(), status:'pendente', paidDate:null});
   }
+  return installments;
+}
+function finalizeSale(){
+  const discount = Number(document.getElementById('f-discount').value)||0;
+  const paymentMethod = document.getElementById('f-paymethod').value;
+  const professionalId = document.getElementById('f-payprof').value;
+  const docType = document.getElementById('f-doctype').value;
+  const total = Math.max(0, cartTotal()-discount);
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
+
+  if(paymentMethod==='Crédito (Super Cliente)' && !(client && client.superClient)){
+    toast('Selecione um cliente marcado como Super Cliente para usar Crédito.','bad'); return;
+  }
+
+  const installments = buildInstallments(paymentMethod, total);
 
   // stock deduction
   cart.forEach(item=>{
@@ -1750,10 +1759,13 @@ RENDERERS.caixa = function(el){
   const history = [...DB.cashSessions].filter(c=>c.status==='fechado').sort((a,b)=>b.closedAt.localeCompare(a.closedAt)).slice(0,15);
 
   if(!openSession){
+    const lastClosed = history[0];
+    const suggestedOpening = lastClosed ? lastClosed.closingAmount : 0;
     el.innerHTML = `
       <div class="panel" style="max-width:420px;">
         <h2 style="margin-top:0;font-size:17px;">Abrir caixa</h2>
-        <div class="field"><label>Valor de abertura (fundo de troco)</label><input type="number" id="f-opening" value="0"></div>
+        <div class="field"><label>Valor de abertura (fundo de troco)</label><input type="number" id="f-opening" value="${suggestedOpening}"></div>
+        ${lastClosed? `<p style="font-size:11px;color:var(--ink-soft);margin-top:-6px;">Sugestão: saldo contado no último fecho (${fmtDate(lastClosed.closedAt.slice(0,10))}). Ajuste se o valor na gaveta for diferente.</p>` : ''}
         <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="openCash()">Abrir caixa</button>
       </div>
       <div class="section-head" style="margin-top:26px;"><h2>Histórico de fechos</h2></div>
@@ -1765,17 +1777,20 @@ RENDERERS.caixa = function(el){
   const byMethod = {};
   PAY_METHODS.forEach(m=>byMethod[m]=0);
   sessionSales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
-  const expected = openSession.openingAmount + (byMethod['Numerário']||0);
+  const cashExpenses = DB.expenses.filter(e=>e.cashSessionId===openSession.id && e.paymentSource==='Numerário (Caixa)');
+  const cashExpensesTotal = cashExpenses.reduce((a,e)=>a+e.amount,0);
+  const expected = openSession.openingAmount + (byMethod['Numerário']||0) - cashExpensesTotal;
 
   el.innerHTML = `
     <div class="grid-kpi">
       <div class="kpi-card"><div class="label">Aberto às</div><div class="value" style="font-size:19px;">${openSession.openedAt.slice(11,16)}</div><div class="sub">fundo: ${fmt(openSession.openingAmount)}</div></div>
       <div class="kpi-card"><div class="label">Vendas na sessão</div><div class="value">${sessionSales.length}</div><div class="sub">${fmt(sessionSales.reduce((a,s)=>a+s.total,0))}</div></div>
-      <div class="kpi-card"><div class="label">Numerário esperado</div><div class="value">${fmt(expected)}</div><div class="sub">fundo + vendas em dinheiro</div></div>
+      <div class="kpi-card"><div class="label">Numerário esperado</div><div class="value">${fmt(expected)}</div><div class="sub">fundo + vendas em dinheiro${cashExpensesTotal?' − despesas em dinheiro':''}</div></div>
     </div>
     <div class="panel">
       <h3 style="margin-top:0;font-size:14px;">Totais por método de pagamento</h3>
       ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${m}</span><strong>${fmt(byMethod[m]||0)}</strong></div>`).join('')}
+      ${cashExpensesTotal? `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;color:var(--bad);"><span>Despesas pagas em numerário (nesta sessão)</span><strong>− ${fmt(cashExpensesTotal)}</strong></div>` : ''}
     </div>
     <div class="panel">
       <h3 style="margin-top:0;font-size:14px;">Fechar caixa</h3>
@@ -1814,7 +1829,11 @@ function closeCash(id, expected){
   const s = DB.cashSessions.find(c=>c.id===id);
   s.status='fechado'; s.closedAt=new Date().toISOString(); s.closedBy = session?session.name:'—';
   s.closingAmount = counted; s.expectedTotal = expected; s.difference = counted-expected;
-  save(); toast('Caixa fechado.'); navigate('caixa');
+  save();
+  const diff = counted-expected;
+  const diffTxt = diff===0? 'sem diferença' : (diff>0? `sobra de ${fmt(diff)}` : `falta de ${fmt(Math.abs(diff))}`);
+  toast(`Caixa fechado com saldo de ${fmt(counted)} (${diffTxt}). Este valor será sugerido na próxima abertura.`);
+  navigate('caixa');
 }
 
 /* =========================================================================
@@ -1876,14 +1895,17 @@ RENDERERS.relatorios = function(el){
       <table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Documento</th><th>Pagamento</th><th>Emitido por</th><th>Total</th><th></th></tr></thead>
       <tbody>
         ${[...sales].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)).map(s=>`<tr>
-          <td>${String(s.invoice).padStart(5,'0')}</td>
+          <td>${String(s.invoice).padStart(5,'0')}${s.editedBy?` <span class="tag tag-warn" title="Corrigida por ${s.editedBy} em ${s.editedAt?fmtDate(s.editedAt.slice(0,10)):''}">Corrigida</span>`:''}</td>
           <td>${fmtDate(s.date)} ${s.time}</td>
           <td>${s.clientId? clientName(s.clientId) : 'Cliente avulso'}</td>
           <td>${s.docType||'Fatura-Recibo'}</td>
           <td>${s.paymentMethod}</td>
           <td>${s.issuedBy||'—'}</td>
           <td><strong>${fmt(s.total)}</strong></td>
-          <td><button class="btn btn-sm" onclick="reprintSale('${s.id}')">Reimprimir</button></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="reprintSale('${s.id}')">Reimprimir</button>
+            <button class="btn btn-sm" onclick="openEditSaleModal('${s.id}')">Corrigir</button>
+          </td>
         </tr>`).join('') || `<tr class="empty-row"><td colspan="8">Sem vendas registadas no período.</td></tr>`}
       </tbody></table>
     </div>
@@ -1892,6 +1914,120 @@ RENDERERS.relatorios = function(el){
 function reprintSale(id){
   const sale = DB.sales.find(s=>s.id===id);
   if(sale) printReceipt(sale);
+}
+
+/* ---- Corrigir venda (Administrador) — edita uma fatura já emitida sem duplicar o número ---- */
+let editSaleId = null;
+let editCart = [];
+function openEditSaleModal(id){
+  const sale = DB.sales.find(s=>s.id===id);
+  if(!sale) return;
+  editSaleId = id;
+  editCart = sale.items.map(i=>({...i}));
+  const availableMethods = PAY_METHODS;
+  openModal('Corrigir venda Nº '+String(sale.invoice).padStart(5,'0'), `
+    <p style="font-size:11.5px;color:var(--ink-soft);margin-top:0;">A corrigir a fatura original (${fmtDate(sale.date)} ${sale.time}). O número da fatura mantém-se — não é criada uma nova venda.</p>
+    <div class="field"><label>Cliente</label><select id="ef-client">
+      <option value="">Cliente avulso</option>
+      ${DB.clients.map(c=>`<option value="${c.id}" ${sale.clientId===c.id?'selected':''}>${c.name}</option>`).join('')}
+    </select></div>
+    <div id="edit-cart-items" style="max-height:220px;overflow-y:auto;margin:10px 0;"></div>
+    <div class="field"><label>Desconto (MT)</label><input type="number" id="ef-discount" value="${sale.discount}" oninput="updateEditTotal()"></div>
+    <div class="field"><label>Método de pagamento</label><select id="f-paymethod" onchange="toggleInstallmentFields()">${availableMethods.map(m=>`<option ${sale.paymentMethod===m?'selected':''}>${m}</option>`).join('')}</select></div>
+    <div id="f-installment-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
+      <div class="field-row cols-2">
+        <div class="field" style="margin-bottom:8px;"><label>Nº de parcelas</label><input type="number" id="f-installments" value="${sale.installments&&sale.installments.length>1?sale.installments.length:2}" min="2" max="24" oninput="updateEditTotal()"></div>
+        <div class="field" style="margin-bottom:8px;"><label>Intervalo (dias)</label><input type="number" id="f-installmentgap" value="30"></div>
+      </div>
+      <div class="field" style="margin-bottom:0;"><label>Data da 1ª parcela</label><input type="date" id="f-installmentstart" value="${sale.installments&&sale.installments[0]?sale.installments[0].dueDate:today()}"></div>
+    </div>
+    <div id="f-credit-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
+      <p style="font-size:11px;color:var(--ink-soft);margin:0;">Valor fica registado como saldo em aberto do cliente.</p>
+    </div>
+    <div class="field"><label>Profissional (comissão)</label><select id="ef-prof"><option value="">—</option>${DB.professionals.filter(p=>p.active).map(p=>`<option value="${p.id}" ${sale.professionalId===p.id?'selected':''}>${p.name}</option>`).join('')}</select></div>
+    <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:700;font-family:'Fraunces',serif;border-top:1px solid var(--line);padding-top:12px;margin-top:8px;">
+      <span>Total</span><span id="edit-total">${fmt(sale.total)}</span>
+    </div>
+  `, `<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveEditedSale()">Guardar correção</button>`, true);
+  renderEditCartItems();
+  setTimeout(toggleInstallmentFields, 0);
+}
+function editCartTotal(){ return editCart.reduce((a,i)=>a+i.price*i.qty,0); }
+function renderEditCartItems(){
+  const el = document.getElementById('edit-cart-items');
+  if(!el) return;
+  el.innerHTML = editCart.length ? editCart.map((item,idx)=>`
+    <div class="cart-line">
+      <div style="flex:1;">
+        <div style="font-weight:700;">${item.name}</div>
+        <div style="color:var(--ink-soft);font-size:11px;">${item.category||''}${item.openPrice?' · Preço aberto':''}</div>
+        <div class="qty-ctrl"><button onclick="changeEditQty(${idx},-1)">-</button><span>${item.qty}</span><button onclick="changeEditQty(${idx},1)">+</button>
+          <input type="number" value="${item.price}" style="width:70px;margin-left:8px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;font-size:11.5px;" onchange="setEditPrice(${idx}, this.value)">
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-weight:700;">${fmt(item.price*item.qty)}</div>
+        <button class="btn btn-sm btn-danger" style="margin-top:4px;" onclick="removeEditItem(${idx})">Remover</button>
+      </div>
+    </div>`).join('') : `<p style="font-size:12.5px;color:var(--ink-soft);">Sem itens — adicione pelo menos um.</p>`;
+  updateEditTotal();
+}
+function changeEditQty(idx, delta){
+  const item = editCart[idx];
+  const newQty = item.qty+delta;
+  if(newQty<1){ removeEditItem(idx); return; }
+  item.qty = newQty; renderEditCartItems();
+}
+function setEditPrice(idx, value){
+  const v = Number(value);
+  editCart[idx].price = isNaN(v)? 0 : v;
+  renderEditCartItems();
+}
+function removeEditItem(idx){ editCart.splice(idx,1); renderEditCartItems(); }
+function updateEditTotal(){
+  const d = Number(document.getElementById('ef-discount').value)||0;
+  const totalEl = document.getElementById('edit-total');
+  if(totalEl) totalEl.textContent = fmt(Math.max(0, editCartTotal()-d));
+}
+function saveEditedSale(){
+  if(!editCart.length){ toast('A venda tem de ter pelo menos um item.','bad'); return; }
+  const sale = DB.sales.find(s=>s.id===editSaleId);
+  if(!sale) return;
+  const discount = Number(document.getElementById('ef-discount').value)||0;
+  const paymentMethod = document.getElementById('f-paymethod').value;
+  const professionalId = document.getElementById('ef-prof').value;
+  const clientId = document.getElementById('ef-client').value || null;
+  const total = Math.max(0, editCartTotal()-discount);
+  const client = clientId ? DB.clients.find(c=>c.id===clientId) : null;
+
+  if(paymentMethod==='Crédito (Super Cliente)' && !(client && client.superClient)){
+    toast('Selecione um cliente marcado como Super Cliente para usar Crédito.','bad'); return;
+  }
+
+  // reconcile stock: restore what the original sale had deducted, then deduct what the corrected sale needs
+  const netDelta = {}; // productId -> qty change to apply (positive = deduct more, negative = restore)
+  sale.items.forEach(i=>{ if(i.type==='product' && i.refId) netDelta[i.refId] = (netDelta[i.refId]||0) - i.qty; });
+  editCart.forEach(i=>{ if(i.type==='product' && i.refId) netDelta[i.refId] = (netDelta[i.refId]||0) + i.qty; });
+  Object.entries(netDelta).forEach(([productId, delta])=>{
+    if(!delta) return;
+    const p = productById(productId);
+    if(!p) return;
+    p.stock = Math.max(0, p.stock - delta);
+    DB.stockMovements.push({id:uid(), productId:p.id, type: delta>0?'saida':'entrada', qty:Math.abs(delta), reason:'Correção da venda Nº '+String(sale.invoice).padStart(5,'0'), date:today()});
+  });
+
+  const installments = buildInstallments(paymentMethod, total);
+
+  Object.assign(sale, {
+    clientId, items: editCart.map(i=>({...i})), subtotal: editCartTotal(), discount, total,
+    paymentMethod, installments, professionalId: professionalId||null,
+    editedBy: session? session.name : '', editedAt: new Date().toISOString(),
+  });
+
+  save(); closeModal();
+  toast('Venda corrigida. O caixa e os relatórios já refletem o novo valor.');
+  printReceipt(sale);
+  navigate(currentPage);
 }
 function printRelatorio(){
   const from = new Date(); from.setDate(from.getDate()-(reportRange-1));
@@ -2007,8 +2143,9 @@ RENDERERS.contabilidade = function(el){
         <button class="pill-tab ${contabTab==='irpc'?'active':''}" onclick="contabTab='irpc';navigate('contabilidade')">Estimativa de IRPC</button>
         <button class="pill-tab ${contabTab==='despesas'?'active':''}" onclick="contabTab='despesas';navigate('contabilidade')">Despesas / Compras</button>
         <button class="pill-tab ${contabTab==='parcelamentos'?'active':''}" onclick="contabTab='parcelamentos';navigate('contabilidade')">Parcelamentos</button>
+        <button class="pill-tab ${contabTab==='pettycash'?'active':''}" onclick="contabTab='pettycash';navigate('contabilidade')">Petty Cash</button>
       </div>
-      ${contabTab!=='parcelamentos'? `<input type="month" value="${contabMonth}" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;" onchange="contabMonth=this.value;navigate('contabilidade')">`:''}
+      ${contabTab!=='parcelamentos' && contabTab!=='pettycash'? `<input type="month" value="${contabMonth}" style="padding:8px 10px;border:1px solid var(--line);border-radius:7px;" onchange="contabMonth=this.value;navigate('contabilidade')">`:''}
     </div>
     <div id="contab-body"></div>
     <p style="font-size:11px;color:var(--ink-soft);margin-top:18px;">Estes mapas são um apoio de gestão simplificado, gerado automaticamente a partir das vendas, despesas e estoque registados no sistema. Não substituem a contabilidade organizada exigida por lei nem a validação de um contabilista certificado.</p>
@@ -2018,8 +2155,68 @@ RENDERERS.contabilidade = function(el){
   else if(contabTab==='iva') renderIva(body, monthSales, monthExpenses);
   else if(contabTab==='irpc') renderIrpc(body, monthSales, monthExpenses);
   else if(contabTab==='parcelamentos') renderParcelamentos(body);
+  else if(contabTab==='pettycash') renderPettyCash(body);
   else renderDespesas(body, monthExpenses);
 };
+function pettyCashBalance(){
+  const injected = (DB.pettyCash.fundEntries||[]).reduce((a,f)=>a+f.amount,0);
+  const spent = DB.expenses.filter(e=>e.paymentSource==='Petty Cash').reduce((a,e)=>a+e.amount,0);
+  return injected - spent;
+}
+function renderPettyCash(el){
+  const entries = [...(DB.pettyCash.fundEntries||[])].sort((a,b)=>b.date.localeCompare(a.date));
+  const spentList = DB.expenses.filter(e=>e.paymentSource==='Petty Cash').sort((a,b)=>b.date.localeCompare(a.date));
+  const balance = pettyCashBalance();
+  el.innerHTML = `
+    <div class="grid-kpi">
+      <div class="kpi-card"><div class="label">Saldo atual do Petty Cash</div><div class="value" style="color:${balance<0?'var(--bad)':'var(--ink)'}">${fmt(balance)}</div></div>
+      <div class="kpi-card"><div class="label">Total injetado</div><div class="value">${fmt(entries.reduce((a,f)=>a+f.amount,0))}</div></div>
+      <div class="kpi-card"><div class="label">Total gasto</div><div class="value">${fmt(spentList.reduce((a,e)=>a+e.amount,0))}</div></div>
+    </div>
+    <div class="section-head"><h3 style="margin:0;font-size:14px;">Fontes do Petty Cash</h3><div class="actions"><button class="btn btn-bronze" onclick="openPettyFundModal()">${ic('plus',14)} Adicionar fundo</button></div></div>
+    <div class="table-wrap" style="margin-bottom:22px;">
+      <table><thead><tr><th>Data</th><th>Fonte</th><th>Valor</th><th>Notas</th><th></th></tr></thead>
+      <tbody>
+        ${entries.map(f=>`<tr>
+          <td>${fmtDate(f.date)}</td><td>${f.source}</td><td><strong>${fmt(f.amount)}</strong></td><td>${f.notes||'—'}</td>
+          <td><button class="btn btn-sm btn-danger" onclick="deletePettyFund('${f.id}')">${ic('trash',13)}</button></td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="5">Sem fundos registados.</td></tr>`}
+      </tbody></table>
+    </div>
+    <h3 style="font-size:14px;margin-bottom:10px;">Despesas pagas com Petty Cash</h3>
+    <div class="table-wrap">
+      <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead>
+      <tbody>
+        ${spentList.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.description}</td><td>${e.category}</td><td><strong>${fmt(e.amount)}</strong></td></tr>`).join('') || `<tr class="empty-row"><td colspan="4">Sem despesas pagas com Petty Cash.</td></tr>`}
+      </tbody></table>
+    </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">Para pagar uma despesa com o Petty Cash, registe-a em "Despesas / Compras" e escolha "Petty Cash" como forma de pagamento.</p>
+  `;
+}
+function openPettyFundModal(){
+  openModal('Adicionar fundo ao Petty Cash', `
+    <div class="field"><label>Fonte do fundo</label><input id="f-pfsource" placeholder="Ex: Retirado do caixa principal / Injeção da proprietária"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Valor (MT)</label><input type="number" id="f-pfamount" value="0"></div>
+      <div class="field"><label>Data</label><input type="date" id="f-pfdate" value="${today()}"></div>
+    </div>
+    <div class="field"><label>Notas (opcional)</label><input id="f-pfnotes"></div>
+  `, `<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePettyFund()">Guardar</button>`);
+}
+function savePettyFund(){
+  const source = document.getElementById('f-pfsource').value.trim();
+  const amount = Number(document.getElementById('f-pfamount').value)||0;
+  if(!source){ toast('Indique a fonte do fundo.','bad'); return; }
+  if(amount<=0){ toast('Indique um valor válido.','bad'); return; }
+  DB.pettyCash.fundEntries.push({id:uid(), source, amount, date:document.getElementById('f-pfdate').value||today(), notes:document.getElementById('f-pfnotes').value.trim()});
+  save(); closeModal(); toast('Fundo adicionado ao Petty Cash.'); navigate('contabilidade');
+}
+function deletePettyFund(id){
+  confirmAction('Eliminar este fundo do Petty Cash?', ()=>{
+    DB.pettyCash.fundEntries = DB.pettyCash.fundEntries.filter(f=>f.id!==id);
+    save(); toast('Fundo eliminado.','bad'); navigate('contabilidade');
+  });
+}
 function renderParcelamentos(el){
   const rows = [];
   DB.sales.forEach(s=>{
@@ -2241,16 +2438,18 @@ function renderDespesas(el, monthExpenses){
   el.innerHTML = `
     <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openExpenseModal()">${ic('plus',14)} Nova despesa</button></div></div>
     <div class="table-wrap">
-      <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>IVA</th><th></th></tr></thead>
+      <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pago com</th><th>Valor</th><th>IVA</th><th></th></tr></thead>
       <tbody>
         ${monthExpenses.map(e=>`<tr>
-          <td>${fmtDate(e.date)}</td><td>${e.description}</td><td>${e.category}</td><td><strong>${fmt(e.amount)}</strong></td>
+          <td>${fmtDate(e.date)}</td><td>${e.description}</td><td>${e.category}</td>
+          <td>${e.paymentSource||'—'}</td>
+          <td><strong>${fmt(e.amount)}</strong></td>
           <td>${e.hasVat? fmt(e.vatAmount) : '—'}</td>
           <td style="white-space:nowrap;">
             <button class="btn btn-sm" onclick="openExpenseModal('${e.id}')">${ic('edit',13)}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteExpense('${e.id}')">${ic('trash',13)}</button>
           </td>
-        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Sem despesas registadas neste mês.</td></tr>`}
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="7">Sem despesas registadas neste mês.</td></tr>`}
       </tbody></table>
     </div>
   `;
@@ -2258,6 +2457,8 @@ function renderDespesas(el, monthExpenses){
 function openExpenseModal(id){
   const e = id ? DB.expenses.find(x=>x.id===id) : null;
   const cats = ['Compra de produtos','Renda','Salários','Serviços (água, luz, internet)','Marketing','Manutenção','Outras'];
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  const pettyBalance = pettyCashBalance();
   openModal(e?'Editar despesa / compra':'Nova despesa / compra', `
     <div class="field"><label>Descrição</label><input id="f-edesc" value="${e?e.description:''}" placeholder="Ex: Compra de produtos ao fornecedor"></div>
     <div class="field-row cols-2">
@@ -2265,6 +2466,11 @@ function openExpenseModal(id){
       <div class="field"><label>Data</label><input type="date" id="f-edate" value="${e?e.date:today()}"></div>
     </div>
     <div class="field"><label>Valor total (MT)</label><input type="number" id="f-eamount" value="${e?e.amount:0}"></div>
+    <div class="field"><label>Pago com</label><select id="f-esource">${EXPENSE_SOURCES.map(s=>`<option ${(e?e.paymentSource:'Numerário (Caixa)')===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <p style="font-size:11px;color:var(--ink-soft);margin:-8px 0 13px;">
+      ${openSession? `Caixa atual aberto — numerário esperado é reduzido automaticamente se escolher "Numerário (Caixa)".` : `Não há caixa aberto no momento — se escolher "Numerário (Caixa)", a despesa fica registada mas sem ligação a uma sessão.`}
+      Saldo atual do Petty Cash: <strong>${fmt(pettyBalance)}</strong>.
+    </p>
     <div class="field"><label><input type="checkbox" id="f-ehasvat" ${e&&e.hasVat?'checked':''} onchange="document.getElementById('f-evatwrap').style.display=this.checked?'block':'none'"> Despesa com IVA dedutível</label></div>
     <div class="field" id="f-evatwrap" style="display:${e&&e.hasVat?'block':'none'};"><label>Valor do IVA incluído</label><input type="number" id="f-evat" value="${e?e.vatAmount:0}"></div>
   `, `
@@ -2277,9 +2483,12 @@ function saveExpense(id){
   const description = document.getElementById('f-edesc').value.trim();
   if(!description){ toast('Indique uma descrição.','bad'); return; }
   const hasVat = document.getElementById('f-ehasvat').checked;
+  const paymentSource = document.getElementById('f-esource').value;
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
   const data = {
     description, category:document.getElementById('f-ecat').value, date:document.getElementById('f-edate').value,
     amount:Number(document.getElementById('f-eamount').value)||0, hasVat, vatAmount: hasVat? Number(document.getElementById('f-evat').value)||0 : 0,
+    paymentSource, cashSessionId: paymentSource==='Numerário (Caixa)' && openSession ? openSession.id : null,
   };
   if(id){ Object.assign(DB.expenses.find(e=>e.id===id), data); toast('Despesa atualizada.'); }
   else { DB.expenses.push({id:uid(), ...data}); toast('Despesa registada.'); }

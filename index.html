@@ -383,12 +383,14 @@ const NAV = [
   {id:'dashboard', label:'Painel', icon:'grid'},
   {id:'agenda', label:'Agenda', icon:'cal'},
   {id:'vendas', label:'Vendas / POS', icon:'cart'},
+  {id:'encomendas', label:'Encomendas', icon:'parcel'},
   {id:'caixa', label:'Caixa', icon:'box'},
   {group:'Cadastros'},
   {id:'clientes', label:'Clientes', icon:'user'},
   {id:'servicos', label:'Serviços', icon:'spark'},
   {id:'produtos', label:'Produtos', icon:'tag'},
   {id:'estoque', label:'Estoque', icon:'stack'},
+  {id:'compras', label:'Compras a Fornecedores', icon:'cartdown'},
   {id:'fornecedores', label:'Fornecedores', icon:'truck'},
   {id:'profissionais', label:'Profissionais', icon:'users'},
   {group:'Gestão'},
@@ -400,8 +402,8 @@ const NAV = [
 
 /* Which pages each profile can access. Administrador always has full access. */
 const ROLE_ACCESS = {
-  'Administrador': ['dashboard','agenda','vendas','caixa','clientes','servicos','produtos','estoque','fornecedores','profissionais','relatorios','contabilidade','usuarios','config'],
-  'Recepção': ['dashboard','agenda','vendas','caixa','clientes'],
+  'Administrador': ['dashboard','agenda','vendas','encomendas','caixa','clientes','servicos','produtos','estoque','compras','fornecedores','profissionais','relatorios','contabilidade','usuarios','config'],
+  'Recepção': ['dashboard','agenda','vendas','encomendas','caixa','clientes'],
   'Esteticista': ['dashboard','agenda','clientes'],
 };
 function allowedPages(){
@@ -430,6 +432,8 @@ const ICONS = {
   shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>',
   truck:'<rect x="1" y="7" width="14" height="10" rx="1"/><path d="M15 10h4l3 3v4h-7z"/><circle cx="6" cy="19" r="1.7"/><circle cx="17.5" cy="19" r="1.7"/>',
   layers:'<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>',
+  parcel:'<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/><path d="M7 5.5l10 5.5"/>',
+  cartdown:'<circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L21 7H6"/><path d="M17 1v7"/><path d="M14 5l3 3 3-3"/>',
 };
 function ic(name,size=16){return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
 
@@ -548,6 +552,7 @@ const LOGO_B64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBAU
 const DB_KEY = 'rnw_erp_db_v1';
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function today(){return new Date().toISOString().slice(0,10);}
+function addDays(dateStr, n){ const d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function nowTime(){return new Date().toTimeString().slice(0,5);}
 function fmt(n){
   n = Number(n||0);
@@ -600,6 +605,7 @@ function bootstrapDB(company, admin){
     clients: [], professionals: [], services, products, clientPackages: [],
     appointments: [], sales: [], stockMovements: [], expenses: [], cashSessions: [],
     suppliers: [], serviceCategories: [...SERVICE_CATS_DEFAULT], pettyCash: {fundEntries:[]},
+    customerOrders: [], purchaseOrders: [],
     users: [{id:uid(), name:admin.name, role:'Administrador', pin:admin.pin}],
     settings: {
       companyName: company.name || 'RENW Skin Renewal',
@@ -634,6 +640,8 @@ function migrate(db){
   db.sales.forEach(s=>{ if(!s.installments) s.installments = []; if(s.issuedBy===undefined) s.issuedBy=''; if(s.notes===undefined) s.notes=''; if(s.editedBy===undefined) s.editedBy=''; if(s.editedAt===undefined) s.editedAt=''; });
   db.pettyCash = db.pettyCash || {fundEntries:[]};
   db.expenses.forEach(e=>{ if(e.paymentSource===undefined) e.paymentSource = 'Outro'; if(e.cashSessionId===undefined) e.cashSessionId = null; });
+  db.customerOrders = db.customerOrders || [];
+  db.purchaseOrders = db.purchaseOrders || [];
   return db;
 }
 function save(){ localStorage.setItem(DB_KEY, JSON.stringify(DB)); scheduleFirebaseSave(); }
@@ -784,7 +792,7 @@ function buildNav(){
     document.getElementById('sidebar-backdrop').classList.remove('show');
   }));
 }
-const PAGE_TITLES = {dashboard:'Painel',agenda:'Agenda',vendas:'Vendas / Ponto de Venda',caixa:'Caixa',clientes:'Clientes',servicos:'Serviços',produtos:'Produtos',estoque:'Estoque',profissionais:'Profissionais',relatorios:'Relatórios',contabilidade:'Contabilidade',usuarios:'Utilizadores',config:'Configurações'};
+const PAGE_TITLES = {dashboard:'Painel',agenda:'Agenda',vendas:'Vendas / Ponto de Venda',encomendas:'Encomendas de Clientes',caixa:'Caixa',clientes:'Clientes',servicos:'Serviços',produtos:'Produtos',estoque:'Estoque',compras:'Compras a Fornecedores',fornecedores:'Fornecedores',profissionais:'Profissionais',relatorios:'Relatórios',contabilidade:'Contabilidade',usuarios:'Utilizadores',config:'Configurações'};
 const RENDERERS = {};
 function navigate(page){
   if(!canAccess(page)){ page = 'dashboard'; }
@@ -837,6 +845,9 @@ RENDERERS.dashboard = function(el){
     .map(c=>({c, days:daysUntilBirthday(c.birthday)}))
     .filter(x=>x.days!=null && x.days<=7)
     .sort((a,b)=>a.days-b.days);
+  const ordersDue = canAccess('encomendas') ? DB.customerOrders
+    .filter(o=> o.status!=='Entregue' && o.status!=='Cancelado' && o.expectedDate && o.expectedDate<=addDays(t,7))
+    .sort((a,b)=>a.expectedDate.localeCompare(b.expectedDate)) : [];
 
   const kpis = [];
   if(admin) kpis.push(`<div class="kpi-card"><div class="label">Faturação de hoje</div><div class="value">${fmt(revenueToday)}</div><div class="sub">${salesToday.length} venda(s)</div></div>`);
@@ -857,6 +868,20 @@ RENDERERS.dashboard = function(el){
           <td>${fmtDate(c.birthday).slice(0,5)}</td>
           <td>${c.phone||'—'}</td>
           <td>${days===0?`<span class="tag tag-good">Hoje!</span>`:`<span class="tag tag-neutral">em ${days} dia${days===1?'':'s'}</span>`}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>` : ''}
+
+    ${ordersDue.length? `
+    <div class="section-head"><h2>📦 Encomendas a chegar/entregar</h2><div class="actions"><button class="btn btn-sm" onclick="navigate('encomendas')">Ver todas</button></div></div>
+    <div class="table-wrap" style="margin-bottom:24px;">
+      <table><thead><tr><th>Data prevista</th><th>Cliente</th><th>Itens</th><th>Estado</th></tr></thead>
+      <tbody>
+        ${ordersDue.map(o=>`<tr>
+          <td>${fmtDate(o.expectedDate)}</td>
+          <td>${o.clientId? clientName(o.clientId) : 'Cliente avulso'}</td>
+          <td>${o.items.map(i=>`${i.qty}x ${i.name}`).join(', ')}</td>
+          <td><span class="tag ${ORDER_STATUS_TAG[o.status]}">${o.status}</span></td>
         </tr>`).join('')}
       </tbody></table>
     </div>` : ''}
@@ -1720,7 +1745,6 @@ function printReceipt(sale){
   const html = `
     <div style="font-family:'Manrope',sans-serif;max-width:320px;margin:0 auto;">
       <div style="text-align:center;margin-bottom:10px;">
-        <img src="${LOGO_B64}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;margin-bottom:6px;">
         <div style="font-family:'Fraunces',serif;font-weight:700;font-size:20px;">${DB.settings.companyName.split(' ')[0]}</div>
         <div style="font-size:9.5px;letter-spacing:2px;">SKIN RENEWAL</div>
         <div style="font-size:10.5px;color:#555;margin-top:3px;">${DB.settings.address}${DB.settings.phone?' · '+DB.settings.phone:''}</div>
@@ -1749,6 +1773,237 @@ function printReceipt(sale){
     </div>`;
   document.getElementById('print-area').innerHTML = html;
   setTimeout(()=>window.print(), 150);
+}
+
+/* =========================================================================
+   ENCOMENDAS DE CLIENTES (vendas por encomenda)
+   ========================================================================= */
+const ORDER_STATUS = ['Pendente','Encomendado ao fornecedor','Chegou','Entregue','Cancelado'];
+const ORDER_STATUS_TAG = {'Pendente':'tag-neutral','Encomendado ao fornecedor':'tag-warn','Chegou':'tag-good','Entregue':'tag-good','Cancelado':'tag-bad'};
+let orderFilter = 'Ativas';
+let orderItems = [];
+RENDERERS.encomendas = function(el){
+  const filters = ['Ativas', ...ORDER_STATUS];
+  const list = DB.customerOrders.filter(o=> orderFilter==='Ativas' ? (o.status!=='Entregue' && o.status!=='Cancelado') : o.status===orderFilter)
+    .sort((a,b)=>(a.expectedDate||'9999').localeCompare(b.expectedDate||'9999'));
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Produtos que o cliente encomendou mas que ainda não estão em estoque — acompanhe até à entrega e converta diretamente em venda quando chegar.</p>
+    <div class="pill-tabs">${filters.map(f=>`<button class="pill-tab ${f===orderFilter?'active':''}" onclick="orderFilter='${f}';navigate('encomendas')">${f}</button>`).join('')}</div>
+    <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openOrderModal()">${ic('plus',14)} Nova encomenda</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Data prevista</th><th>Cliente</th><th>Itens</th><th>Sinal</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(o=>`<tr>
+          <td>${o.expectedDate? fmtDate(o.expectedDate) : '—'}</td>
+          <td>${o.clientId? clientName(o.clientId) : 'Cliente avulso'}</td>
+          <td>${o.items.map(i=>`${i.qty}x ${i.name}`).join(', ')}</td>
+          <td>${o.depositAmount? fmt(o.depositAmount)+(o.depositPaid?' (pago)':' (pendente)') : '—'}</td>
+          <td><span class="tag ${ORDER_STATUS_TAG[o.status]}">${o.status}</span></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openOrderModal('${o.id}')">${ic('edit',13)}</button>
+            ${o.status!=='Entregue'&&o.status!=='Cancelado'? `<button class="btn btn-sm btn-bronze" onclick="convertOrderToSale('${o.id}')">Converter em venda</button>`:''}
+            <button class="btn btn-sm btn-danger" onclick="deleteOrder('${o.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Sem encomendas neste filtro.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function openOrderModal(id){
+  const o = id ? DB.customerOrders.find(x=>x.id===id) : null;
+  orderItems = o ? o.items.map(i=>({...i})) : [];
+  openModal(o?'Editar encomenda':'Nova encomenda de cliente', `
+    <div class="field"><label>Cliente</label><select id="of-client">
+      <option value="">Cliente avulso</option>
+      ${DB.clients.map(c=>`<option value="${c.id}" ${o&&o.clientId===c.id?'selected':''}>${c.name}</option>`).join('')}
+    </select></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Data prevista de chegada</label><input type="date" id="of-date" value="${o?o.expectedDate||'':''}"></div>
+      <div class="field"><label>Estado</label><select id="of-status">${ORDER_STATUS.map(s=>`<option ${o&&o.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    </div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:4px 0 12px;">
+    <div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;">Itens encomendados</div>
+    <div class="field-row cols-3" style="align-items:end;">
+      <div class="field" style="margin-bottom:8px;"><label>Produto do catálogo (opcional)</label><select id="of-catalog" onchange="fillOrderItemFromCatalog()">
+        <option value="">— produto novo / não listado —</option>
+        ${DB.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+      </select></div>
+    </div>
+    <div class="field-row cols-3">
+      <div class="field" style="margin-bottom:8px;"><label>Nome</label><input id="of-iname"></div>
+      <div class="field" style="margin-bottom:8px;"><label>Qtd</label><input type="number" id="of-iqty" value="1"></div>
+      <div class="field" style="margin-bottom:8px;"><label>Preço estimado</label><input type="number" id="of-iprice" value="0"></div>
+    </div>
+    <button class="btn btn-sm" style="margin-bottom:12px;" onclick="addOrderItem()">${ic('plus',13)} Adicionar item</button>
+    <div id="order-items-list"></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:12px 0;">
+    <div class="field-row cols-2">
+      <div class="field"><label>Sinal / depósito (MT, opcional)</label><input type="number" id="of-deposit" value="${o?o.depositAmount||0:0}"></div>
+      <div class="field"><label><input type="checkbox" id="of-depositpaid" ${o&&o.depositPaid?'checked':''}> Sinal já pago</label></div>
+    </div>
+    <div class="field"><label>Notas</label><textarea id="of-notes" rows="2">${o?o.notes||'':''}</textarea></div>
+  `, `
+    ${o? `<button class="btn btn-danger" onclick="deleteOrder('${o.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="saveOrder(${o?`'${o.id}'`:'null'})">Guardar</button>
+  `, true);
+  renderOrderItemsList();
+}
+function fillOrderItemFromCatalog(){
+  const id = document.getElementById('of-catalog').value;
+  if(!id) return;
+  const p = productById(id);
+  if(p){ document.getElementById('of-iname').value = p.name; document.getElementById('of-iprice').value = p.price; }
+}
+function addOrderItem(){
+  const name = document.getElementById('of-iname').value.trim();
+  const qty = Number(document.getElementById('of-iqty').value)||1;
+  const price = Number(document.getElementById('of-iprice').value)||0;
+  if(!name){ toast('Indique o nome do item.','bad'); return; }
+  const catalogId = document.getElementById('of-catalog').value || null;
+  orderItems.push({name, qty, price, refId:catalogId});
+  renderOrderItemsList();
+  document.getElementById('of-iname').value=''; document.getElementById('of-iqty').value=1; document.getElementById('of-iprice').value=0;
+  document.getElementById('of-catalog').value='';
+}
+function removeOrderItem(idx){ orderItems.splice(idx,1); renderOrderItemsList(); }
+function renderOrderItemsList(){
+  const el = document.getElementById('order-items-list');
+  if(!el) return;
+  el.innerHTML = orderItems.length ? orderItems.map((it,idx)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px;">
+      <span>${it.qty}x ${it.name}</span>
+      <span style="display:flex;align-items:center;gap:10px;"><strong>${fmt(it.price*it.qty)}</strong>
+        <button class="btn btn-sm btn-danger" onclick="removeOrderItem(${idx})">${ic('trash',12)}</button>
+      </span>
+    </div>`).join('') : `<p style="font-size:12px;color:var(--ink-soft);">Sem itens ainda.</p>`;
+}
+function saveOrder(id){
+  if(!orderItems.length){ toast('Adicione pelo menos um item à encomenda.','bad'); return; }
+  const data = {
+    clientId: document.getElementById('of-client').value || null,
+    expectedDate: document.getElementById('of-date').value || '',
+    status: document.getElementById('of-status').value,
+    items: orderItems.map(i=>({...i})),
+    depositAmount: Number(document.getElementById('of-deposit').value)||0,
+    depositPaid: document.getElementById('of-depositpaid').checked,
+    notes: document.getElementById('of-notes').value.trim(),
+  };
+  if(id){ Object.assign(DB.customerOrders.find(o=>o.id===id), data); toast('Encomenda atualizada.'); }
+  else { DB.customerOrders.push({id:uid(), createdAt:today(), createdBy:session?session.name:'', ...data}); toast('Encomenda registada.'); }
+  save(); closeModal(); navigate('encomendas');
+}
+function deleteOrder(id){
+  confirmAction('Eliminar esta encomenda?', ()=>{
+    DB.customerOrders = DB.customerOrders.filter(o=>o.id!==id);
+    save(); toast('Encomenda eliminada.','bad'); navigate('encomendas');
+  });
+}
+function convertOrderToSale(id){
+  const o = DB.customerOrders.find(x=>x.id===id);
+  if(!o) return;
+  cart = o.items.map(i=>({type:'product', refId:i.refId||null, name:i.name, category:null, price:i.price, qty:i.qty, openPrice:!i.refId}));
+  posClientId = o.clientId || '';
+  o.status = 'Entregue';
+  save();
+  toast('Itens carregados no Ponto de Venda — escolha o pagamento para concluir a venda.');
+  navigate('vendas');
+}
+
+/* =========================================================================
+   COMPRAS A FORNECEDORES (planeamento de compras / produtos a encomendar)
+   ========================================================================= */
+const PURCHASE_STATUS = ['Planeado','Encomendado','Recebido','Cancelado'];
+const PURCHASE_STATUS_TAG = {'Planeado':'tag-neutral','Encomendado':'tag-warn','Recebido':'tag-good','Cancelado':'tag-bad'};
+let purchaseFilter = 'Ativas';
+RENDERERS.compras = function(el){
+  const filters = ['Ativas', ...PURCHASE_STATUS];
+  const list = DB.purchaseOrders.filter(o=> purchaseFilter==='Ativas' ? (o.status!=='Recebido' && o.status!=='Cancelado') : o.status===purchaseFilter)
+    .sort((a,b)=>(a.expectedDate||'9999').localeCompare(b.expectedDate||'9999'));
+  el.innerHTML = `
+    <p style="font-size:12px;color:var(--ink-soft);margin-top:0;">Planeamento de produtos a comprar aos fornecedores para repor o estoque.</p>
+    <div class="pill-tabs">${filters.map(f=>`<button class="pill-tab ${f===purchaseFilter?'active':''}" onclick="purchaseFilter='${f}';navigate('compras')">${f}</button>`).join('')}</div>
+    <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openPurchaseModal()">${ic('plus',14)} Planear compra</button></div></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Data prevista</th><th>Produto</th><th>Fornecedor</th><th>Qtd</th><th>Estado</th><th></th></tr></thead>
+      <tbody>
+        ${list.map(o=>{ const sup=DB.suppliers.find(s=>s.id===o.supplierId); return `<tr>
+          <td>${o.expectedDate? fmtDate(o.expectedDate) : '—'}</td>
+          <td>${o.productName}</td>
+          <td>${sup?sup.name:'—'}</td>
+          <td>${o.qty}</td>
+          <td><span class="tag ${PURCHASE_STATUS_TAG[o.status]}">${o.status}</span></td>
+          <td style="white-space:nowrap;">
+            <button class="btn btn-sm" onclick="openPurchaseModal('${o.id}')">${ic('edit',13)}</button>
+            ${o.status!=='Recebido'&&o.status!=='Cancelado'? `<button class="btn btn-sm btn-bronze" onclick="receivePurchase('${o.id}')">Marcar recebido</button>`:''}
+            <button class="btn btn-sm btn-danger" onclick="deletePurchase('${o.id}')">${ic('trash',13)}</button>
+          </td>
+        </tr>`; }).join('') || `<tr class="empty-row"><td colspan="6">Sem compras planeadas neste filtro.</td></tr>`}
+      </tbody></table>
+    </div>
+  `;
+};
+function openPurchaseModal(id){
+  const o = id ? DB.purchaseOrders.find(x=>x.id===id) : null;
+  openModal(o?'Editar compra planeada':'Planear compra a fornecedor', `
+    <div class="field"><label>Produto do catálogo (opcional)</label><select id="pf-catalog" onchange="document.getElementById('pf-pname').value=this.options[this.selectedIndex].text==='— produto novo —'?'':this.options[this.selectedIndex].text">
+      <option value="">— produto novo —</option>
+      ${DB.products.map(p=>`<option value="${p.id}" ${o&&o.productId===p.id?'selected':''}>${p.name}</option>`).join('')}
+    </select></div>
+    <div class="field"><label>Nome do produto</label><input id="pf-pname" value="${o?o.productName:''}" placeholder="Preenchido automaticamente ou escreva um produto novo"></div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Fornecedor</label><select id="pf-supplier">
+        <option value="">—</option>
+        ${DB.suppliers.map(s=>`<option value="${s.id}" ${o&&o.supplierId===s.id?'selected':''}>${s.name}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>Quantidade</label><input type="number" id="pf-qty" value="${o?o.qty:1}"></div>
+    </div>
+    <div class="field-row cols-2">
+      <div class="field"><label>Data prevista</label><input type="date" id="pf-date" value="${o?o.expectedDate||'':''}"></div>
+      <div class="field"><label>Estado</label><select id="pf-status">${PURCHASE_STATUS.map(s=>`<option ${o&&o.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Notas</label><textarea id="pf-notes" rows="2">${o?o.notes||'':''}</textarea></div>
+  `, `
+    ${o? `<button class="btn btn-danger" onclick="deletePurchase('${o.id}');closeModal();">Eliminar</button>`:''}
+    <button class="btn" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-primary" onclick="savePurchase(${o?`'${o.id}'`:'null'})">Guardar</button>
+  `);
+}
+function savePurchase(id){
+  const productName = document.getElementById('pf-pname').value.trim();
+  if(!productName){ toast('Indique o nome do produto.','bad'); return; }
+  const data = {
+    productId: document.getElementById('pf-catalog').value || null,
+    productName, supplierId: document.getElementById('pf-supplier').value || null,
+    qty: Number(document.getElementById('pf-qty').value)||1,
+    expectedDate: document.getElementById('pf-date').value || '',
+    status: document.getElementById('pf-status').value,
+    notes: document.getElementById('pf-notes').value.trim(),
+  };
+  if(id){ Object.assign(DB.purchaseOrders.find(o=>o.id===id), data); toast('Compra atualizada.'); }
+  else { DB.purchaseOrders.push({id:uid(), createdAt:today(), ...data}); toast('Compra planeada.'); }
+  save(); closeModal(); navigate('compras');
+}
+function deletePurchase(id){
+  confirmAction('Eliminar esta compra planeada?', ()=>{
+    DB.purchaseOrders = DB.purchaseOrders.filter(o=>o.id!==id);
+    save(); toast('Compra eliminada.','bad'); navigate('compras');
+  });
+}
+function receivePurchase(id){
+  const o = DB.purchaseOrders.find(x=>x.id===id);
+  if(!o) return;
+  if(o.productId){
+    const p = productById(o.productId);
+    if(p){
+      p.stock += o.qty;
+      DB.stockMovements.push({id:uid(), productId:p.id, type:'entrada', qty:o.qty, reason:'Compra planeada recebida', supplierId:o.supplierId, date:today()});
+    }
+  }
+  o.status = 'Recebido';
+  save();
+  toast(o.productId? 'Compra recebida — estoque atualizado.' : 'Compra marcada como recebida. Como não está ligada a um produto do catálogo, adicione-o manualmente em Produtos se ainda não existir.');
+  navigate('compras');
 }
 
 /* =========================================================================
@@ -1932,6 +2187,23 @@ function openEditSaleModal(id){
       ${DB.clients.map(c=>`<option value="${c.id}" ${sale.clientId===c.id?'selected':''}>${c.name}</option>`).join('')}
     </select></div>
     <div id="edit-cart-items" style="max-height:220px;overflow-y:auto;margin:10px 0;"></div>
+    <div style="font-size:11.5px;font-weight:700;color:var(--ink-soft);margin:4px 0 6px;">Adicionar produto ou serviço à venda</div>
+    <div class="field-row cols-3" style="align-items:end;">
+      <div class="field" style="margin-bottom:8px;"><label>Catálogo</label>
+        <select id="ef-catalog" onchange="fillEditPriceFromCatalog()">
+          <option value="">— escolher —</option>
+          <optgroup label="Serviços">
+            ${DB.services.map(s=>`<option value="service:${s.id}">${s.name}</option>`).join('')}
+          </optgroup>
+          <optgroup label="Produtos">
+            ${DB.products.map(p=>`<option value="product:${p.id}">${p.name}</option>`).join('')}
+          </optgroup>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:8px;"><label>Qtd</label><input type="number" id="ef-newqty" value="1"></div>
+      <div class="field" style="margin-bottom:8px;"><label>Preço</label><input type="number" id="ef-newprice" value="0"></div>
+    </div>
+    <button class="btn btn-sm" style="margin-bottom:16px;" onclick="addEditItem()">${ic('plus',13)} Adicionar à venda</button>
     <div class="field"><label>Desconto (MT)</label><input type="number" id="ef-discount" value="${sale.discount}" oninput="updateEditTotal()"></div>
     <div class="field"><label>Método de pagamento</label><select id="f-paymethod" onchange="toggleInstallmentFields()">${availableMethods.map(m=>`<option ${sale.paymentMethod===m?'selected':''}>${m}</option>`).join('')}</select></div>
     <div id="f-installment-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
@@ -1984,6 +2256,33 @@ function setEditPrice(idx, value){
   renderEditCartItems();
 }
 function removeEditItem(idx){ editCart.splice(idx,1); renderEditCartItems(); }
+function fillEditPriceFromCatalog(){
+  const val = document.getElementById('ef-catalog').value;
+  if(!val) return;
+  const [type,id] = val.split(':');
+  if(type==='product'){ const p=productById(id); if(p) document.getElementById('ef-newprice').value = p.price; }
+  else { const s=serviceById(id); if(s) document.getElementById('ef-newprice').value = s.type==='pacote'? s.packagePrice : s.price; }
+}
+function addEditItem(){
+  const val = document.getElementById('ef-catalog').value;
+  if(!val){ toast('Escolha um produto ou serviço para adicionar.','bad'); return; }
+  const [type,id] = val.split(':');
+  const qty = Math.max(1, Number(document.getElementById('ef-newqty').value)||1);
+  const price = Number(document.getElementById('ef-newprice').value)||0;
+  if(type==='product'){
+    const p = productById(id);
+    if(!p){ toast('Produto não encontrado.','bad'); return; }
+    editCart.push({type:'product', refId:p.id, name:p.name, category:p.category, price, qty});
+  } else {
+    const s = serviceById(id);
+    if(!s){ toast('Serviço não encontrado.','bad'); return; }
+    editCart.push({type:'service', refId:s.id, name:s.name, category:s.category, price, qty, isPackage:s.type==='pacote', packageSessions:s.packageSessions});
+  }
+  renderEditCartItems();
+  document.getElementById('ef-catalog').value='';
+  document.getElementById('ef-newqty').value=1;
+  document.getElementById('ef-newprice').value=0;
+}
 function updateEditTotal(){
   const d = Number(document.getElementById('ef-discount').value)||0;
   const totalEl = document.getElementById('edit-total');

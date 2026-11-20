@@ -438,7 +438,27 @@ const ICONS = {
 function ic(name,size=16){return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||''}</svg>`;}
 
 const PAY_METHODS = ['Numerário','M-Pesa','E-Mola','Cartão POS','Transferência','Pagamento Parcelado','Crédito (Super Cliente)'];
-const EXPENSE_SOURCES = ['Numerário (Caixa)','Petty Cash','Transferência Bancária','M-Pesa','E-Mola','Outro'];
+const CASH_FORMS = ['Numerário','M-Pesa','E-Mola','Transferência Bancária'];
+const PETTY_FORMS = ['Numerário','M-Pesa','E-Mola'];
+function expenseSourceOptionsHTML(selected){
+  const opt = (v)=>`<option value="${v}" ${selected===v?'selected':''}>${v}</option>`;
+  return `
+    <optgroup label="Pago com o Caixa">
+      ${CASH_FORMS.map(f=>opt('Caixa ('+f+')')).join('')}
+    </optgroup>
+    <optgroup label="Pago com o Petty Cash">
+      ${PETTY_FORMS.map(f=>opt('Petty Cash ('+f+')')).join('')}
+    </optgroup>
+    ${opt('Outro')}
+  `;
+}
+/* Returns {origin:'Caixa'|'Petty Cash'|'Outro', form:string|null} from a stored paymentSource string. */
+function parseExpenseSource(src){
+  if(!src) return {origin:'Outro', form:null};
+  const m = src.match(/^(Caixa|Petty Cash) \((.+)\)$/);
+  if(m) return {origin:m[1], form:m[2]};
+  return {origin:'Outro', form:null};
+}
 const PRODUCT_CATS = ['Pele','Cabelo','Corpo','Suplementação'];
 const SERVICE_CATS_DEFAULT = ['Depilação a Laser','Microagulhamento','Limpeza de Pele'];
 function serviceCats(){ return DB.serviceCategories || SERVICE_CATS_DEFAULT; }
@@ -605,7 +625,7 @@ function bootstrapDB(company, admin){
     clients: [], professionals: [], services, products, clientPackages: [],
     appointments: [], sales: [], stockMovements: [], expenses: [], cashSessions: [],
     suppliers: [], serviceCategories: [...SERVICE_CATS_DEFAULT], pettyCash: {fundEntries:[]},
-    customerOrders: [], purchaseOrders: [],
+    customerOrders: [], purchaseOrders: [], cashMovements: [],
     users: [{id:uid(), name:admin.name, role:'Administrador', pin:admin.pin}],
     settings: {
       companyName: company.name || 'RENW Skin Renewal',
@@ -639,9 +659,23 @@ function migrate(db){
   db.products.forEach(p=>{ if(p.supplierId===undefined) p.supplierId = null; });
   db.sales.forEach(s=>{ if(!s.installments) s.installments = []; if(s.issuedBy===undefined) s.issuedBy=''; if(s.notes===undefined) s.notes=''; if(s.editedBy===undefined) s.editedBy=''; if(s.editedAt===undefined) s.editedAt=''; });
   db.pettyCash = db.pettyCash || {fundEntries:[]};
-  db.expenses.forEach(e=>{ if(e.paymentSource===undefined) e.paymentSource = 'Outro'; if(e.cashSessionId===undefined) e.cashSessionId = null; });
+  db.pettyCash.fundEntries.forEach(f=>{ if(!f.form) f.form = 'Numerário'; });
+  const OLD_SOURCE_MAP = {'Numerário (Caixa)':'Caixa (Numerário)','Petty Cash':'Petty Cash (Numerário)','Transferência Bancária':'Caixa (Transferência Bancária)','M-Pesa':'Caixa (M-Pesa)','E-Mola':'Caixa (E-Mola)'};
+  db.expenses.forEach(e=>{
+    if(e.paymentSource===undefined){ e.paymentSource = 'Outro'; }
+    else if(OLD_SOURCE_MAP[e.paymentSource]){ e.paymentSource = OLD_SOURCE_MAP[e.paymentSource]; }
+    if(e.cashSessionId===undefined) e.cashSessionId = null;
+  });
   db.customerOrders = db.customerOrders || [];
   db.purchaseOrders = db.purchaseOrders || [];
+  db.customerOrders.forEach(o=>{ if(o.depositMethod===undefined) o.depositMethod = null; if(o.depositDate===undefined) o.depositDate = null; });
+  db.cashMovements = db.cashMovements || [];
+  db.products.forEach(p=>{ if(p.barcode===undefined) p.barcode = ''; });
+  db.sales.forEach(s=>{
+    if(!s.payments){ s.payments = [{method:s.paymentMethod, amount:s.total}]; }
+    if(s.depositApplied===undefined) s.depositApplied = 0;
+    if(s.orderId===undefined) s.orderId = null;
+  });
   return db;
 }
 function save(){ localStorage.setItem(DB_KEY, JSON.stringify(DB)); scheduleFirebaseSave(); }
@@ -669,6 +703,44 @@ function openModal(title, bodyHtml, footHtml, wide=false){
   overlay.classList.add('show');
 }
 function closeModal(){ document.getElementById('overlay').classList.remove('show'); }
+
+/* ---- Leitor de código de barras (câmara) — usado em Produtos e em Vendas ---- */
+async function openBarcodeScanner(onDetect){
+  if(!('BarcodeDetector' in window)){
+    toast('Leitor de código de barras não suportado neste navegador/dispositivo. Introduza o código manualmente.','bad');
+    return;
+  }
+  openModal('Ler código de barras', `
+    <video id="scan-video" style="width:100%;border-radius:8px;background:#000;max-height:320px;object-fit:cover;" autoplay playsinline muted></video>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:8px;text-align:center;">Aponte a câmara para o código de barras do produto.</p>
+  `, `<button class="btn" onclick="stopBarcodeScanner()">Cancelar</button>`);
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    const video = document.getElementById('scan-video');
+    if(!video){ stream.getTracks().forEach(t=>t.stop()); return; } // modal closed before camera was ready
+    video.srcObject = stream;
+    window._scanStream = stream;
+    const detector = new BarcodeDetector({formats:['ean_13','ean_8','code_128','upc_a','upc_e','code_39']});
+    window._scanLoop = setInterval(async ()=>{
+      try{
+        const codes = await detector.detect(video);
+        if(codes.length){
+          const value = codes[0].rawValue;
+          stopBarcodeScanner();
+          onDetect(value);
+        }
+      }catch(err){ /* detection glitch on a single frame — ignore and keep scanning */ }
+    }, 350);
+  }catch(err){
+    closeModal();
+    toast('Não foi possível aceder à câmara (verifique as permissões do navegador).','bad');
+  }
+}
+function stopBarcodeScanner(){
+  if(window._scanLoop){ clearInterval(window._scanLoop); window._scanLoop=null; }
+  if(window._scanStream){ window._scanStream.getTracks().forEach(t=>t.stop()); window._scanStream=null; }
+  closeModal();
+}
 document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closeModal(); });
 
 /* ---------- confirm ---------- */
@@ -822,6 +894,16 @@ function updateCashBadge(){
    ========================================================================= */
 function clientName(id){ const c=DB.clients.find(x=>x.id===id); return c? c.name : '—'; }
 function profName(id){ const p=DB.professionals.find(x=>x.id===id); return p? p.name : '—'; }
+/* Always use this instead of sale.paymentMethod directly — supports sales split across several methods. */
+function salePayments(sale){
+  if(sale.payments && sale.payments.length) return sale.payments;
+  return [{method:sale.paymentMethod, amount:sale.total}];
+}
+function saleMethodLabel(sale){
+  const p = salePayments(sale);
+  if(p.length<=1) return p[0]? p[0].method : '—';
+  return 'Pagamento misto ('+p.map(x=>x.method).join(' + ')+')';
+}
 function serviceById(id){ return DB.services.find(x=>x.id===id); }
 function productById(id){ return DB.products.find(x=>x.id===id); }
 const STATUS_LABELS = {agendado:'Agendado',confirmado:'Confirmado',concluido:'Concluído',cancelado:'Cancelado'};
@@ -1266,10 +1348,11 @@ RENDERERS.produtos = function(el){
     <div class="pill-tabs">${cats.map(c=>`<button class="pill-tab ${c===produtoCat?'active':''}" onclick="produtoCat='${c}';navigate('produtos')">${c}</button>`).join('')}</div>
     <div class="section-head"><div></div><div class="actions"><button class="btn btn-bronze" onclick="openProductModal()">${ic('plus',14)} Novo produto</button></div></div>
     <div class="table-wrap">
-      <table><thead><tr><th>Produto</th><th>Categoria</th><th>Fornecedor</th><th>Preço venda</th><th>Custo</th><th>Stock</th><th></th></tr></thead>
+      <table><thead><tr><th>Produto</th><th>Cód. barras</th><th>Categoria</th><th>Fornecedor</th><th>Preço venda</th><th>Custo</th><th>Stock</th><th></th></tr></thead>
       <tbody>
         ${list.map(p=>{ const sup = DB.suppliers.find(s=>s.id===p.supplierId); return `<tr>
           <td><strong>${p.name}</strong></td>
+          <td style="font-family:monospace;font-size:11px;">${p.barcode||'—'}</td>
           <td>${p.category}</td>
           <td>${sup? sup.name : `<span class="tag tag-bad">Sem fornecedor</span>`}</td>
           <td><strong>${fmt(p.price)}</strong></td>
@@ -1279,20 +1362,27 @@ RENDERERS.produtos = function(el){
             <button class="btn btn-sm" onclick="openProductModal('${p.id}')">${ic('edit',13)}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteProduct('${p.id}')">${ic('trash',13)}</button>
           </td>
-        </tr>`; }).join('') || `<tr class="empty-row"><td colspan="7">Nenhum produto nesta categoria.</td></tr>`}
+        </tr>`; }).join('') || `<tr class="empty-row"><td colspan="8">Nenhum produto nesta categoria.</td></tr>`}
       </tbody></table>
     </div>
   `;
 };
-function openProductModal(id){
+function openProductModal(id, prefillBarcode){
   const p = id ? DB.products.find(x=>x.id===id) : null;
   if(!DB.suppliers.length){
     openModal('Novo produto', `<p style="font-size:13px;color:var(--ink-soft);">Todo o produto precisa de um fornecedor. Registe primeiro um fornecedor em <strong>Fornecedores</strong> e volte aqui para criar o produto.</p>`,
       `<button class="btn" onclick="closeModal()">Fechar</button><button class="btn btn-primary" onclick="closeModal();navigate('fornecedores')">Ir para Fornecedores</button>`);
     return;
   }
+  const barcodeVal = prefillBarcode!=null ? prefillBarcode : (p?p.barcode||'':'');
   openModal(p?'Editar produto':'Novo produto', `
     <div class="field"><label>Nome</label><input id="f-name" value="${p?p.name:''}"></div>
+    <div class="field"><label>Código de barras (opcional)</label>
+      <div style="display:flex;gap:8px;">
+        <input id="f-barcode" value="${barcodeVal}" placeholder="Ler ou escrever manualmente" style="flex:1;">
+        <button type="button" class="btn btn-sm" onclick="openBarcodeScanner(code=>openProductModal(${p?`'${p.id}'`:'null'}, code))">${ic('tag',13)} Ler</button>
+      </div>
+    </div>
     <div class="field-row cols-2">
       <div class="field"><label>Categoria</label><select id="f-cat">${PRODUCT_CATS.map(c=>`<option ${p&&p.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>Fornecedor</label><select id="f-supplier">${DB.suppliers.map(s=>`<option value="${s.id}" ${p&&p.supplierId===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
@@ -1316,8 +1406,10 @@ function saveProduct(id){
   if(!name){ toast('Indique o nome do produto.','bad'); return; }
   const supplierId = document.getElementById('f-supplier').value;
   if(!supplierId){ toast('Selecione o fornecedor do produto.','bad'); return; }
+  const barcode = document.getElementById('f-barcode').value.trim();
+  if(barcode && DB.products.some(p=>p.barcode===barcode && p.id!==id)){ toast('Já existe outro produto com este código de barras.','bad'); return; }
   const data = {
-    name, category:document.getElementById('f-cat').value, supplierId,
+    name, category:document.getElementById('f-cat').value, supplierId, barcode,
     price:Number(document.getElementById('f-price').value)||0,
     cost:Number(document.getElementById('f-cost').value)||0,
     stock:Number(document.getElementById('f-stock').value)||0,
@@ -1530,6 +1622,8 @@ function saveProf(id){
 let cart = [];
 let posTab = 'servicos';
 let posClientId = '';
+let checkoutDepositContext = null; // {orderId, depositApplied, depositMethod} — set by convertOrderToSale
+const IMMEDIATE_METHODS = ['Numerário','M-Pesa','E-Mola','Cartão POS','Transferência'];
 RENDERERS.vendas = function(el){
   const openSession = DB.cashSessions.find(c=>c.status==='aberto');
   if(!openSession){
@@ -1547,6 +1641,7 @@ RENDERERS.vendas = function(el){
         <div class="pill-tabs">
           <button class="pill-tab ${posTab==='servicos'?'active':''}" onclick="posTab='servicos';navigate('vendas')">Serviços</button>
           <button class="pill-tab ${posTab==='produtos'?'active':''}" onclick="posTab='produtos';navigate('vendas')">Produtos</button>
+          <button class="btn btn-sm" style="margin-left:auto;" onclick="scanToAddToCart()">${ic('tag',13)} Ler código de barras</button>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;">
           ${posTab==='servicos' ? DB.services.map(s=>`
@@ -1574,11 +1669,12 @@ RENDERERS.vendas = function(el){
               return `<p style="font-size:10.5px;color:var(--warn);margin:6px 0 0;">${label}${isAdmin()?'':' (definição de preço só pelo Administrador)'}.</p>`;
             } return ''; })()}
         </div>
+        ${checkoutDepositContext? `<div style="padding:10px 16px;background:var(--cream);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--warn);">📦 Encomenda com sinal de ${fmt(checkoutDepositContext.depositApplied)} já pago (${checkoutDepositContext.depositMethod||''}) — será descontado no total a cobrar agora.</div>` : ''}
         <div class="pos-cart-items" id="cart-items">${renderCartItems()}</div>
         <div class="pos-cart-foot">
           ${renderCartTotals()}
           <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:10px;padding:11px;" ${cart.length?'':'disabled'} onclick="openCheckoutModal()">Finalizar venda</button>
-          <button class="btn" style="width:100%;justify-content:center;margin-top:8px;" ${cart.length?'':'disabled'} onclick="cart=[];navigate('vendas')">Limpar carrinho</button>
+          <button class="btn" style="width:100%;justify-content:center;margin-top:8px;" ${cart.length?'':'disabled'} onclick="cart=[];checkoutDepositContext=null;navigate('vendas')">Limpar carrinho</button>
         </div>
       </div>
     </div>
@@ -1628,6 +1724,13 @@ function addToCart(type,id){
   }
   navigate('vendas');
 }
+function scanToAddToCart(){
+  openBarcodeScanner(code=>{
+    const p = DB.products.find(pr=>pr.barcode===code);
+    if(!p){ toast('Nenhum produto encontrado com o código '+code+'.','bad'); return; }
+    addToCart('product', p.id);
+  });
+}
 function changeQty(idx,delta){
   const item = cart[idx];
   if(item.type!=='product') return;
@@ -1639,25 +1742,51 @@ function changeQty(idx,delta){
 }
 function removeFromCart(idx){ cart.splice(idx,1); navigate('vendas'); }
 
+let checkoutPayments = [];
+function checkoutTargetAmount(){
+  const d = Number(document.getElementById('f-discount')?.value)||0;
+  const total = Math.max(0, cartTotal()-d);
+  const deposit = checkoutDepositContext ? Math.min(checkoutDepositContext.depositApplied, total) : 0;
+  return { total, deposit, remainder: Math.max(0, total-deposit) };
+}
 function openCheckoutModal(){
   const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
-  const availableMethods = PAY_METHODS.filter(m=> m!=='Crédito (Super Cliente)' || (client && client.superClient));
+  const specialMethods = ['Pagamento Parcelado'].concat(client&&client.superClient ? ['Crédito (Super Cliente)'] : []);
+  checkoutPayments = [];
   openModal('Finalizar venda', `
-    <div style="max-height:200px;overflow-y:auto;margin-bottom:14px;">
+    <div style="max-height:180px;overflow-y:auto;margin-bottom:14px;">
       ${cart.map(i=>`<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:5px 0;"><span>${i.qty}x ${i.name}</span><span>${fmt(i.price*i.qty)}</span></div>`).join('')}
     </div>
-    <div class="field"><label>Desconto (MT)</label><input type="number" id="f-discount" value="0" oninput="updateCheckoutTotal()"></div>
-    <div class="field"><label>Método de pagamento</label><select id="f-paymethod" onchange="toggleInstallmentFields()">${availableMethods.map(m=>`<option>${m}</option>`).join('')}</select></div>
+    <div class="field"><label>Desconto (MT)</label><input type="number" id="f-discount" value="0" oninput="renderPaymentSplit()"></div>
+    ${checkoutDepositContext? `<div style="background:var(--cream);border-radius:8px;padding:10px 14px;margin-bottom:13px;font-size:12px;">
+      <div style="display:flex;justify-content:space-between;"><span>Total da venda</span><span id="co-total-line">—</span></div>
+      <div style="display:flex;justify-content:space-between;color:var(--good);"><span>Sinal já pago (${checkoutDepositContext.depositMethod||''})</span><span id="co-deposit-line">− ${fmt(checkoutDepositContext.depositApplied)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--line);margin-top:4px;padding-top:4px;"><span>A cobrar agora</span><span id="co-remainder-line">—</span></div>
+    </div>` : ''}
+    <div class="field"><label>Tipo de pagamento</label><select id="f-paytype" onchange="togglePayType()">
+      <option value="imediato">Pagamento imediato (um ou vários métodos)</option>
+      ${specialMethods.map(m=>`<option value="${m}">${m}</option>`).join('')}
+    </select></div>
+    <div id="f-immediate-wrap">
+      <div id="payment-lines" style="margin-bottom:8px;"></div>
+      <div class="field-row cols-2" style="align-items:end;">
+        <div class="field" style="margin-bottom:8px;"><label>Método</label><select id="pl-method">${IMMEDIATE_METHODS.map(m=>`<option>${m}</option>`).join('')}</select></div>
+        <div class="field" style="margin-bottom:8px;"><label>Valor</label><input type="number" id="pl-amount" value="0"></div>
+      </div>
+      <button class="btn btn-sm" style="margin-bottom:10px;" onclick="addPaymentLine()">${ic('plus',13)} Adicionar método</button>
+      <div style="display:flex;justify-content:space-between;font-size:12px;"><span>Atribuído</span><span id="pl-assigned">${fmt(0)}</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:10px;"><span>Falta atribuir</span><span id="pl-remaining" style="font-weight:700;">${fmt(0)}</span></div>
+    </div>
     <div id="f-installment-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
       <div class="field-row cols-2">
-        <div class="field" style="margin-bottom:8px;"><label>Nº de parcelas</label><input type="number" id="f-installments" value="2" min="2" max="24" oninput="updateCheckoutTotal()"></div>
+        <div class="field" style="margin-bottom:8px;"><label>Nº de parcelas</label><input type="number" id="f-installments" value="2" min="2" max="24"></div>
         <div class="field" style="margin-bottom:8px;"><label>Intervalo (dias)</label><input type="number" id="f-installmentgap" value="30"></div>
       </div>
       <div class="field" style="margin-bottom:0;"><label>Data da 1ª parcela</label><input type="date" id="f-installmentstart" value="${today()}"></div>
       <p style="font-size:11px;color:var(--ink-soft);margin:8px 0 0;">As parcelas ficam registadas como pendentes e podem ser marcadas como pagas em Contabilidade → Parcelamentos.</p>
     </div>
     <div id="f-credit-wrap" style="display:none;background:var(--cream);border-radius:8px;padding:12px 14px;margin-bottom:13px;">
-      <p style="font-size:11px;color:var(--ink-soft);margin:0;">Valor total fica registado como saldo em aberto de <strong>${client?client.name:'—'}</strong>. Pode ser liquidado a qualquer momento em Contabilidade → Parcelamentos.</p>
+      <p style="font-size:11px;color:var(--ink-soft);margin:0;">Valor fica registado como saldo em aberto de <strong>${client?client.name:'—'}</strong>. Pode ser liquidado a qualquer momento em Contabilidade → Parcelamentos.</p>
     </div>
     <div class="field"><label>Profissional (comissão)</label><select id="f-payprof"><option value="">—</option>${DB.professionals.filter(p=>p.active).map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
     <div class="field"><label>Documento a emitir</label><select id="f-doctype"><option value="Fatura-Recibo">Fatura-Recibo</option><option value="Fatura">Fatura</option><option value="Recibo">Recibo</option></select></div>
@@ -1665,19 +1794,47 @@ function openCheckoutModal(){
       <span>Total</span><span id="checkout-total">${fmt(cartTotal())}</span>
     </div>
   `, `<button class="btn" onclick="closeModal()">Voltar</button><button class="btn btn-primary" onclick="finalizeSale()">Confirmar pagamento</button>`);
+  renderPaymentSplit();
 }
-function toggleInstallmentFields(){
-  const method = document.getElementById('f-paymethod').value;
-  document.getElementById('f-installment-wrap').style.display = method==='Pagamento Parcelado' ? 'block':'none';
-  document.getElementById('f-credit-wrap').style.display = method==='Crédito (Super Cliente)' ? 'block':'none';
+function togglePayType(){
+  const t = document.getElementById('f-paytype').value;
+  document.getElementById('f-immediate-wrap').style.display = t==='imediato' ? 'block':'none';
+  document.getElementById('f-installment-wrap').style.display = t==='Pagamento Parcelado' ? 'block':'none';
+  document.getElementById('f-credit-wrap').style.display = t==='Crédito (Super Cliente)' ? 'block':'none';
+  renderPaymentSplit();
 }
-function updateCheckoutTotal(){
-  const d = Number(document.getElementById('f-discount').value)||0;
-  document.getElementById('checkout-total').textContent = fmt(Math.max(0,cartTotal()-d));
+function addPaymentLine(){
+  const method = document.getElementById('pl-method').value;
+  const amount = Number(document.getElementById('pl-amount').value)||0;
+  if(amount<=0){ toast('Indique um valor válido.','bad'); return; }
+  checkoutPayments.push({method, amount});
+  document.getElementById('pl-amount').value = 0;
+  renderPaymentSplit();
 }
-function buildInstallments(paymentMethod, total, el){
-  // el: prefix element scope not needed since ids are fixed per modal; reads from whichever
-  // installment-field ids are currently in the DOM (checkout or edit-sale modal share the same ids).
+function removePaymentLine(idx){ checkoutPayments.splice(idx,1); renderPaymentSplit(); }
+function renderPaymentSplit(){
+  const totalEl = document.getElementById('checkout-total');
+  const {total, deposit, remainder} = checkoutTargetAmount();
+  if(totalEl) totalEl.textContent = fmt(total);
+  if(document.getElementById('co-total-line')) document.getElementById('co-total-line').textContent = fmt(total);
+  if(document.getElementById('co-remainder-line')) document.getElementById('co-remainder-line').textContent = fmt(remainder);
+  const linesEl = document.getElementById('payment-lines');
+  if(!linesEl) return;
+  linesEl.innerHTML = checkoutPayments.length ? checkoutPayments.map((p,idx)=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;">
+      <span>${p.method}</span>
+      <span style="display:flex;align-items:center;gap:8px;"><strong>${fmt(p.amount)}</strong><button class="btn btn-sm btn-danger" onclick="removePaymentLine(${idx})">${ic('trash',12)}</button></span>
+    </div>`).join('') : '';
+  const assigned = checkoutPayments.reduce((a,p)=>a+p.amount,0);
+  const assignedEl = document.getElementById('pl-assigned'); if(assignedEl) assignedEl.textContent = fmt(assigned);
+  const remainingEl = document.getElementById('pl-remaining');
+  if(remainingEl){
+    const left = remainder-assigned;
+    remainingEl.textContent = fmt(left);
+    remainingEl.style.color = Math.abs(left)<0.01 ? 'var(--good)' : (left<0 ? 'var(--bad)' : 'var(--ink)');
+  }
+}
+function buildInstallments(paymentMethod, total){
   let installments = [];
   if(paymentMethod==='Pagamento Parcelado'){
     const n = Math.max(2, Number(document.getElementById('f-installments').value)||2);
@@ -1699,40 +1856,57 @@ function buildInstallments(paymentMethod, total, el){
 }
 function finalizeSale(){
   const discount = Number(document.getElementById('f-discount').value)||0;
-  const paymentMethod = document.getElementById('f-paymethod').value;
+  const paytype = document.getElementById('f-paytype').value;
   const professionalId = document.getElementById('f-payprof').value;
   const docType = document.getElementById('f-doctype').value;
-  const total = Math.max(0, cartTotal()-discount);
+  const {total, deposit, remainder} = checkoutTargetAmount();
   const openSession = DB.cashSessions.find(c=>c.status==='aberto');
   const client = posClientId ? DB.clients.find(c=>c.id===posClientId) : null;
 
-  if(paymentMethod==='Crédito (Super Cliente)' && !(client && client.superClient)){
-    toast('Selecione um cliente marcado como Super Cliente para usar Crédito.','bad'); return;
+  let payments = [];
+  let installments = [];
+  if(paytype==='imediato'){
+    const assigned = checkoutPayments.reduce((a,p)=>a+p.amount,0);
+    if(Math.abs(assigned-remainder) > 0.5){
+      toast(`O valor atribuído (${fmt(assigned)}) tem de ser igual ao valor a cobrar agora (${fmt(remainder)}).`,'bad'); return;
+    }
+    payments = checkoutPayments.map(p=>({...p}));
+  } else if(paytype==='Crédito (Super Cliente)'){
+    if(!(client && client.superClient)){ toast('Selecione um cliente marcado como Super Cliente para usar Crédito.','bad'); return; }
+    payments = remainder>0 ? [{method:paytype, amount:remainder}] : [];
+    installments = remainder>0 ? buildInstallments(paytype, remainder) : [];
+  } else { // Pagamento Parcelado
+    payments = remainder>0 ? [{method:paytype, amount:remainder}] : [];
+    installments = remainder>0 ? buildInstallments(paytype, remainder) : [];
   }
-
-  const installments = buildInstallments(paymentMethod, total);
 
   // stock deduction
   cart.forEach(item=>{
     if(item.type==='product'){
       const p = productById(item.refId);
-      p.stock = Math.max(0, p.stock-item.qty);
-      DB.stockMovements.push({id:uid(),productId:p.id,type:'saida',qty:item.qty,reason:'Venda',date:today()});
+      if(p){
+        p.stock = Math.max(0, p.stock-item.qty);
+        DB.stockMovements.push({id:uid(),productId:p.id,type:'saida',qty:item.qty,reason:'Venda',date:today()});
+      }
     }
     if(item.type==='service' && item.isPackage){
       DB.clientPackages.push({id:uid(), clientId:posClientId||null, serviceId:item.refId, serviceName:item.name, category:item.category, totalSessions:item.packageSessions, usedSessions:0, purchaseDate:today(), price:item.price});
     }
   });
 
+  const paymentMethod = payments.length===0 ? 'Sinal aplicado integralmente' : (payments.length===1 ? payments[0].method : 'Pagamento Misto');
+  const orderId = checkoutDepositContext ? checkoutDepositContext.orderId : null;
+
   const sale = {
     id:uid(), invoice:DB.settings.nextInvoice, docType, date:today(), time:nowTime(),
     clientId: posClientId||null, items:cart.map(i=>({...i})), subtotal:cartTotal(), discount, total,
-    paymentMethod, installments, professionalId: professionalId||null, cashSessionId: openSession? openSession.id : null,
-    issuedBy: session? session.name : '', notes:'',
+    payments, paymentMethod, installments, professionalId: professionalId||null, cashSessionId: openSession? openSession.id : null,
+    issuedBy: session? session.name : '', notes:'', depositApplied:deposit, orderId,
   };
   DB.sales.push(sale);
   DB.settings.nextInvoice++;
-  cart = []; posClientId='';
+  if(orderId){ const o = DB.customerOrders.find(x=>x.id===orderId); if(o) o.status='Entregue'; }
+  cart = []; posClientId=''; checkoutDepositContext = null;
   save(); closeModal();
   toast('Venda registada com sucesso.');
   printReceipt(sale);
@@ -1762,7 +1936,12 @@ function printReceipt(sale){
         <div style="display:flex;justify-content:space-between;"><span>Subtotal</span><span>${fmt(sale.subtotal)}</span></div>
         <div style="display:flex;justify-content:space-between;"><span>Desconto</span><span>${fmt(sale.discount)}</span></div>
         <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;"><span>Total</span><span>${fmt(sale.total)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-top:4px;"><span>Pagamento</span><span>${sale.paymentMethod}</span></div>
+        ${sale.depositApplied? `<div style="display:flex;justify-content:space-between;color:#2a6;"><span>Sinal já pago</span><span>− ${fmt(sale.depositApplied)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-weight:700;"><span>Cobrado agora</span><span>${fmt(sale.total-sale.depositApplied)}</span></div>` : ''}
+      </div>
+      <div style="border-top:1px dashed #999;margin-top:6px;padding-top:6px;font-size:12px;">
+        <div style="font-weight:700;margin-bottom:3px;">Pagamento</div>
+        ${salePayments(sale).length? salePayments(sale).map(p=>`<div style="display:flex;justify-content:space-between;"><span>${p.method}</span><span>${fmt(p.amount)}</span></div>`).join('') : `<div>${sale.paymentMethod}</div>`}
       </div>
       ${sale.installments && sale.installments.length? `
       <div style="border-top:1px dashed #999;margin-top:8px;padding-top:6px;font-size:11px;">
@@ -1837,10 +2016,12 @@ function openOrderModal(id){
     <button class="btn btn-sm" style="margin-bottom:12px;" onclick="addOrderItem()">${ic('plus',13)} Adicionar item</button>
     <div id="order-items-list"></div>
     <hr style="border:none;border-top:1px solid var(--line);margin:12px 0;">
-    <div class="field-row cols-2">
+    <div class="field-row cols-3">
       <div class="field"><label>Sinal / depósito (MT, opcional)</label><input type="number" id="of-deposit" value="${o?o.depositAmount||0:0}"></div>
-      <div class="field"><label><input type="checkbox" id="of-depositpaid" ${o&&o.depositPaid?'checked':''}> Sinal já pago</label></div>
+      <div class="field"><label>Método do sinal</label><select id="of-depositmethod">${IMMEDIATE_METHODS.map(m=>`<option ${o&&o.depositMethod===m?'selected':''}>${m}</option>`).join('')}</select></div>
+      <div class="field"><label><input type="checkbox" id="of-depositpaid" ${o&&o.depositPaid?'checked':''}> Sinal já recebido</label></div>
     </div>
+    <p style="font-size:11px;color:var(--ink-soft);margin:-8px 0 13px;">Ao marcar "Sinal já recebido" e guardar, o valor entra no caixa do dia (se houver caixa aberto), com o método escolhido.</p>
     <div class="field"><label>Notas</label><textarea id="of-notes" rows="2">${o?o.notes||'':''}</textarea></div>
   `, `
     ${o? `<button class="btn btn-danger" onclick="deleteOrder('${o.id}');closeModal();">Eliminar</button>`:''}
@@ -1880,17 +2061,30 @@ function renderOrderItemsList(){
 }
 function saveOrder(id){
   if(!orderItems.length){ toast('Adicione pelo menos um item à encomenda.','bad'); return; }
+  const existing = id ? DB.customerOrders.find(o=>o.id===id) : null;
+  const wasPaid = existing ? existing.depositPaid : false;
+  const depositAmount = Number(document.getElementById('of-deposit').value)||0;
+  const depositMethod = document.getElementById('of-depositmethod').value;
+  const depositPaidNow = document.getElementById('of-depositpaid').checked;
   const data = {
     clientId: document.getElementById('of-client').value || null,
     expectedDate: document.getElementById('of-date').value || '',
     status: document.getElementById('of-status').value,
     items: orderItems.map(i=>({...i})),
-    depositAmount: Number(document.getElementById('of-deposit').value)||0,
-    depositPaid: document.getElementById('of-depositpaid').checked,
+    depositAmount, depositMethod, depositPaid: depositPaidNow,
     notes: document.getElementById('of-notes').value.trim(),
   };
-  if(id){ Object.assign(DB.customerOrders.find(o=>o.id===id), data); toast('Encomenda atualizada.'); }
-  else { DB.customerOrders.push({id:uid(), createdAt:today(), createdBy:session?session.name:'', ...data}); toast('Encomenda registada.'); }
+  let orderId = id;
+  if(id){ Object.assign(existing, data); toast('Encomenda atualizada.'); }
+  else { orderId = uid(); DB.customerOrders.push({id:orderId, createdAt:today(), createdBy:session?session.name:'', depositDate:null, ...data}); toast('Encomenda registada.'); }
+
+  if(depositPaidNow && !wasPaid && depositAmount>0){
+    const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+    const o2 = DB.customerOrders.find(x=>x.id===orderId);
+    o2.depositDate = today();
+    DB.cashMovements.push({id:uid(), date:today(), time:nowTime(), type:'sinal', method:depositMethod, amount:depositAmount, cashSessionId: openSession?openSession.id:null, relatedOrderId:orderId, relatedClientId:data.clientId, description:'Sinal de encomenda de cliente', createdBy:session?session.name:''});
+    if(!openSession) toast('Sinal registado, mas não há caixa aberto — não entrou em nenhuma sessão de caixa.','bad');
+  }
   save(); closeModal(); navigate('encomendas');
 }
 function deleteOrder(id){
@@ -1904,9 +2098,8 @@ function convertOrderToSale(id){
   if(!o) return;
   cart = o.items.map(i=>({type:'product', refId:i.refId||null, name:i.name, category:null, price:i.price, qty:i.qty, openPrice:!i.refId}));
   posClientId = o.clientId || '';
-  o.status = 'Entregue';
-  save();
-  toast('Itens carregados no Ponto de Venda — escolha o pagamento para concluir a venda.');
+  checkoutDepositContext = (o.depositPaid && o.depositAmount>0) ? {orderId:o.id, depositApplied:o.depositAmount, depositMethod:o.depositMethod} : null;
+  toast('Itens carregados no Ponto de Venda — clique em "Finalizar venda" para concluir.');
   navigate('vendas');
 }
 
@@ -2009,6 +2202,48 @@ function receivePurchase(id){
 /* =========================================================================
    CAIXA
    ========================================================================= */
+function computeCaixaBreakdown(sessionOrId){
+  const sess = typeof sessionOrId==='string' ? DB.cashSessions.find(c=>c.id===sessionOrId) : sessionOrId;
+  const sessionSales = DB.sales.filter(s=>s.cashSessionId===sess.id);
+  const byMethodSales = {}; PAY_METHODS.forEach(m=>byMethodSales[m]=0);
+  sessionSales.forEach(s=> salePayments(s).forEach(p=>{ byMethodSales[p.method] = (byMethodSales[p.method]||0) + p.amount; }));
+  const byMethodExpenses = {}; CASH_FORMS.forEach(f=>byMethodExpenses[f]=0);
+  DB.expenses.filter(e=>e.cashSessionId===sess.id).forEach(e=>{
+    const {origin, form} = parseExpenseSource(e.paymentSource);
+    if(origin==='Caixa') byMethodExpenses[form] = (byMethodExpenses[form]||0) + e.amount;
+  });
+  const byMethodWithdrawals = {}; CASH_FORMS.forEach(f=>byMethodWithdrawals[f]=0);
+  const byMethodDeposits = {}; CASH_FORMS.forEach(f=>byMethodDeposits[f]=0);
+  DB.cashMovements.filter(m=>m.cashSessionId===sess.id).forEach(m=>{
+    if(m.type==='retirada') byMethodWithdrawals[m.method] = (byMethodWithdrawals[m.method]||0) + m.amount;
+    else if(m.type==='sinal') byMethodDeposits[m.method] = (byMethodDeposits[m.method]||0) + m.amount;
+  });
+  const netByChannel = {};
+  CASH_FORMS.forEach(f=>{
+    const opening = f==='Numerário' ? sess.openingAmount : 0;
+    netByChannel[f] = opening + (byMethodSales[f]||0) + (byMethodDeposits[f]||0) - (byMethodExpenses[f]||0) - (byMethodWithdrawals[f]||0);
+  });
+  return { sessionSales, byMethodSales, byMethodExpenses, byMethodWithdrawals, byMethodDeposits, netByChannel, expectedCash: netByChannel['Numerário'] };
+}
+function renderCaixaBreakdownHTML(b, openingAmount){
+  return `
+    <div style="font-size:12.5px;">
+      <div style="display:flex;justify-content:space-between;padding:4px 0;"><span>Fundo inicial</span><span>${fmt(openingAmount)}</span></div>
+      <div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--good);"><span>+ Vendas em Numerário</span><span>${fmt(b.byMethodSales['Numerário']||0)}</span></div>
+      ${b.byMethodDeposits['Numerário']? `<div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--good);"><span>+ Sinais recebidos (Numerário)</span><span>${fmt(b.byMethodDeposits['Numerário'])}</span></div>`:''}
+      ${b.byMethodExpenses['Numerário']? `<div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--bad);"><span>− Despesas pagas em Numerário</span><span>${fmt(b.byMethodExpenses['Numerário'])}</span></div>`:''}
+      ${b.byMethodWithdrawals['Numerário']? `<div style="display:flex;justify-content:space-between;padding:4px 0;color:var(--bad);"><span>− Retiradas de caixa (Numerário)</span><span>${fmt(b.byMethodWithdrawals['Numerário'])}</span></div>`:''}
+      <div style="display:flex;justify-content:space-between;padding:6px 0 0;border-top:1px solid var(--line);margin-top:4px;font-weight:700;"><span>= Numerário esperado na gaveta</span><span>${fmt(b.expectedCash)}</span></div>
+    </div>
+    <div style="margin-top:14px;font-size:12px;">
+      ${CASH_FORMS.filter(f=>f!=='Numerário').map(f=>{
+        const net = b.netByChannel[f];
+        if(!b.byMethodSales[f] && !b.byMethodExpenses[f] && !b.byMethodWithdrawals[f] && !b.byMethodDeposits[f]) return '';
+        return `<div style="display:flex;justify-content:space-between;padding:3px 0;color:var(--ink-soft);"><span>${f} (vendas ${fmt(b.byMethodSales[f]||0)}${b.byMethodDeposits[f]?' + sinais '+fmt(b.byMethodDeposits[f]):''}${b.byMethodExpenses[f]?' − despesas '+fmt(b.byMethodExpenses[f]):''}${b.byMethodWithdrawals[f]?' − retiradas '+fmt(b.byMethodWithdrawals[f]):''})</span><strong>${fmt(net)}</strong></div>`;
+      }).join('')}
+    </div>
+  `;
+}
 RENDERERS.caixa = function(el){
   const openSession = DB.cashSessions.find(c=>c.status==='aberto');
   const history = [...DB.cashSessions].filter(c=>c.status==='fechado').sort((a,b)=>b.closedAt.localeCompare(a.closedAt)).slice(0,15);
@@ -2028,45 +2263,74 @@ RENDERERS.caixa = function(el){
     `;
     return;
   }
-  const sessionSales = DB.sales.filter(s=>s.cashSessionId===openSession.id);
-  const byMethod = {};
-  PAY_METHODS.forEach(m=>byMethod[m]=0);
-  sessionSales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
-  const cashExpenses = DB.expenses.filter(e=>e.cashSessionId===openSession.id && e.paymentSource==='Numerário (Caixa)');
-  const cashExpensesTotal = cashExpenses.reduce((a,e)=>a+e.amount,0);
-  const expected = openSession.openingAmount + (byMethod['Numerário']||0) - cashExpensesTotal;
+  const b = computeCaixaBreakdown(openSession);
 
   el.innerHTML = `
     <div class="grid-kpi">
       <div class="kpi-card"><div class="label">Aberto às</div><div class="value" style="font-size:19px;">${openSession.openedAt.slice(11,16)}</div><div class="sub">fundo: ${fmt(openSession.openingAmount)}</div></div>
-      <div class="kpi-card"><div class="label">Vendas na sessão</div><div class="value">${sessionSales.length}</div><div class="sub">${fmt(sessionSales.reduce((a,s)=>a+s.total,0))}</div></div>
-      <div class="kpi-card"><div class="label">Numerário esperado</div><div class="value">${fmt(expected)}</div><div class="sub">fundo + vendas em dinheiro${cashExpensesTotal?' − despesas em dinheiro':''}</div></div>
+      <div class="kpi-card"><div class="label">Vendas na sessão</div><div class="value">${b.sessionSales.length}</div><div class="sub">${fmt(b.sessionSales.reduce((a,s)=>a+s.total,0))}</div></div>
+      <div class="kpi-card"><div class="label">Numerário esperado</div><div class="value">${fmt(b.expectedCash)}</div><div class="sub">ver detalhe abaixo</div></div>
     </div>
     <div class="panel">
-      <h3 style="margin-top:0;font-size:14px;">Totais por método de pagamento</h3>
-      ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${m}</span><strong>${fmt(byMethod[m]||0)}</strong></div>`).join('')}
-      ${cashExpensesTotal? `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;color:var(--bad);"><span>Despesas pagas em numerário (nesta sessão)</span><strong>− ${fmt(cashExpensesTotal)}</strong></div>` : ''}
+      <h3 style="margin-top:0;font-size:14px;">Evidência do saldo (porque aumentou/diminuiu)</h3>
+      ${renderCaixaBreakdownHTML(b, openSession.openingAmount)}
     </div>
+    <div class="panel">
+      <h3 style="margin-top:0;font-size:14px;">Totais por método de pagamento (vendas)</h3>
+      ${PAY_METHODS.map(m=>`<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line);"><span>${m}</span><strong>${fmt(b.byMethodSales[m]||0)}</strong></div>`).join('')}
+    </div>
+    <div class="section-head"><div></div><div class="actions"><button class="btn" onclick="openWithdrawalModal()">${ic('box',13)} Registar retirada de caixa</button></div></div>
     <div class="panel">
       <h3 style="margin-top:0;font-size:14px;">Fechar caixa</h3>
-      <div class="field"><label>Valor contado em numerário</label><input type="number" id="f-closing" value="${expected}"></div>
-      <button class="btn btn-danger" style="border:1px solid var(--bad);width:100%;justify-content:center;" onclick="closeCash('${openSession.id}', ${expected})">Fechar caixa</button>
+      <div class="field"><label>Valor contado em numerário</label><input type="number" id="f-closing" value="${b.expectedCash}"></div>
+      <button class="btn btn-danger" style="border:1px solid var(--bad);width:100%;justify-content:center;" onclick="closeCash('${openSession.id}')">Fechar caixa</button>
     </div>
     <div class="section-head" style="margin-top:10px;"><h2>Histórico de fechos</h2></div>
     ${renderCashHistory(history)}
   `;
 };
+function openWithdrawalModal(){
+  const openSession = DB.cashSessions.find(c=>c.status==='aberto');
+  openModal('Registar retirada de caixa', `
+    <div class="field-row cols-2">
+      <div class="field"><label>Valor (MT)</label><input type="number" id="wd-amount" value="0"></div>
+      <div class="field"><label>Forma</label><select id="wd-method">${CASH_FORMS.map(f=>`<option>${f}</option>`).join('')}</select></div>
+    </div>
+    <div class="field"><label>Motivo</label><input id="wd-desc" placeholder="Ex: Depósito no banco / retirada da proprietária"></div>
+  `, `<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" style="border-color:var(--bad)" onclick="saveWithdrawal('${openSession.id}')">Registar retirada</button>`);
+}
+function saveWithdrawal(cashSessionId){
+  const amount = Number(document.getElementById('wd-amount').value)||0;
+  const method = document.getElementById('wd-method').value;
+  const description = document.getElementById('wd-desc').value.trim();
+  if(amount<=0){ toast('Indique um valor válido.','bad'); return; }
+  if(!description){ toast('Indique o motivo da retirada.','bad'); return; }
+  DB.cashMovements.push({id:uid(), date:today(), time:nowTime(), type:'retirada', method, amount, cashSessionId, relatedOrderId:null, relatedClientId:null, description, createdBy:session?session.name:''});
+  save(); closeModal(); toast('Retirada registada — refletida no relatório e na evidência do caixa.'); navigate('caixa');
+}
 function renderCashHistory(history){
   const isAdmin = session && session.role==='Administrador';
   return `<div class="table-wrap">
-    <table><thead><tr><th>Data</th><th>Abertura</th><th>Fecho</th><th>Esperado</th><th>Contado</th><th>Diferença</th>${isAdmin?'<th></th>':''}</tr></thead>
+    <table><thead><tr><th>Data</th><th>Abertura</th><th>Fecho</th><th>Esperado</th><th>Contado</th><th>Diferença</th><th></th></tr></thead>
     <tbody>${history.map(c=>`<tr>
       <td>${fmtDate(c.openedAt.slice(0,10))}</td><td>${fmt(c.openingAmount)}</td><td>${fmt(c.closingAmount)}</td>
       <td>${fmt(c.expectedTotal)}</td><td>${fmt(c.closingAmount)}</td>
       <td style="color:${c.difference<0?'var(--bad)':(c.difference>0?'var(--warn)':'var(--good)')};font-weight:700;">${c.difference>0?'+':''}${fmt(c.difference)}</td>
-      ${isAdmin?`<td><button class="btn btn-sm btn-danger" onclick="deleteCashSession('${c.id}')">${ic('trash',13)}</button></td>`:''}
-    </tr>`).join('') || `<tr class="empty-row"><td colspan="${isAdmin?7:6}">Sem fechos registados ainda.</td></tr>`}</tbody></table>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-sm" onclick="openCashBreakdownModal('${c.id}')">Ver detalhe</button>
+        ${isAdmin?`<button class="btn btn-sm btn-danger" onclick="deleteCashSession('${c.id}')">${ic('trash',13)}</button>`:''}
+      </td>
+    </tr>`).join('') || `<tr class="empty-row"><td colspan="7">Sem fechos registados ainda.</td></tr>`}</tbody></table>
   </div>`;
+}
+function openCashBreakdownModal(id){
+  const sess = DB.cashSessions.find(c=>c.id===id);
+  if(!sess) return;
+  const b = sess.breakdown || computeCaixaBreakdown(sess);
+  openModal('Detalhe do fecho — '+fmtDate(sess.openedAt.slice(0,10)), renderCaixaBreakdownHTML(b, sess.openingAmount) + `
+    <div style="display:flex;justify-content:space-between;padding:10px 0 0;margin-top:10px;border-top:1px solid var(--line);font-weight:700;"><span>Contado no fecho</span><span>${fmt(sess.closingAmount)}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:4px 0;color:${sess.difference<0?'var(--bad)':(sess.difference>0?'var(--warn)':'var(--good)')};font-weight:700;"><span>Diferença</span><span>${sess.difference>0?'+':''}${fmt(sess.difference)}</span></div>
+  `, `<button class="btn" onclick="closeModal()">Fechar</button>`);
 }
 function deleteCashSession(id){
   confirmAction('Eliminar este registo histórico de caixa? As vendas associadas não são apagadas, apenas o registo de abertura/fecho.', ()=>{
@@ -2076,14 +2340,17 @@ function deleteCashSession(id){
 }
 function openCash(){
   const opening = Number(document.getElementById('f-opening').value)||0;
-  DB.cashSessions.push({id:uid(), status:'aberto', openedAt:new Date().toISOString(), openedBy:session?session.name:'—', openingAmount:opening, closedAt:null, closedBy:null, closingAmount:0, expectedTotal:0, difference:0});
+  DB.cashSessions.push({id:uid(), status:'aberto', openedAt:new Date().toISOString(), openedBy:session?session.name:'—', openingAmount:opening, closedAt:null, closedBy:null, closingAmount:0, expectedTotal:0, difference:0, breakdown:null});
   save(); toast('Caixa aberto.'); navigate('caixa');
 }
-function closeCash(id, expected){
+function closeCash(id){
   const counted = Number(document.getElementById('f-closing').value)||0;
   const s = DB.cashSessions.find(c=>c.id===id);
+  const b = computeCaixaBreakdown(s);
+  const expected = b.expectedCash;
   s.status='fechado'; s.closedAt=new Date().toISOString(); s.closedBy = session?session.name:'—';
   s.closingAmount = counted; s.expectedTotal = expected; s.difference = counted-expected;
+  s.breakdown = b;
   save();
   const diff = counted-expected;
   const diffTxt = diff===0? 'sem diferença' : (diff>0? `sobra de ${fmt(diff)}` : `falta de ${fmt(Math.abs(diff))}`);
@@ -2104,7 +2371,10 @@ RENDERERS.relatorios = function(el){
   const productRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>x+i.price*i.qty,0),0);
 
   const byMethod = {}; PAY_METHODS.forEach(m=>byMethod[m]=0);
-  sales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
+  sales.forEach(s=> salePayments(s).forEach(p=>{ byMethod[p.method] = (byMethod[p.method]||0) + p.amount; }));
+  const movements = DB.cashMovements.filter(m=>m.date>=fromStr).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  const withdrawalsTotal = movements.filter(m=>m.type==='retirada').reduce((a,m)=>a+m.amount,0);
+  const depositsTotal = movements.filter(m=>m.type==='sinal').reduce((a,m)=>a+m.amount,0);
 
   const itemCounts = {};
   sales.forEach(s=>s.items.forEach(i=>{ itemCounts[i.name]=(itemCounts[i.name]||0)+i.qty*i.price; }));
@@ -2145,6 +2415,21 @@ RENDERERS.relatorios = function(el){
         ${Object.entries(byCat).map(([cat,val])=>`<div><div style="font-size:11px;color:var(--ink-soft);">${cat}</div><div style="font-family:'Fraunces',serif;font-size:17px;font-weight:600;">${fmt(val)}</div></div>`).join('')}
       </div>
     </div>
+    <div class="section-head"><h2>Movimentos de caixa (sinais e retiradas)</h2></div>
+    <div class="table-wrap" style="margin-bottom:24px;">
+      <table><thead><tr><th>Data</th><th>Tipo</th><th>Método</th><th>Valor</th><th>Motivo</th><th>Por</th></tr></thead>
+      <tbody>
+        ${movements.map(m=>`<tr>
+          <td>${fmtDate(m.date)} ${m.time||''}</td>
+          <td>${m.type==='retirada'? `<span class="tag tag-bad">Retirada</span>` : `<span class="tag tag-good">Sinal recebido</span>`}</td>
+          <td>${m.method}</td>
+          <td><strong>${m.type==='retirada'?'− ':'+ '}${fmt(m.amount)}</strong></td>
+          <td>${m.description||'—'}</td>
+          <td>${m.createdBy||'—'}</td>
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Sem retiradas ou sinais registados no período.</td></tr>`}
+      </tbody></table>
+      ${movements.length? `<div style="padding:10px 14px;font-size:12px;color:var(--ink-soft);border-top:1px solid var(--line);">Total retirado: <strong style="color:var(--bad)">${fmt(withdrawalsTotal)}</strong> · Total de sinais recebidos: <strong style="color:var(--good)">${fmt(depositsTotal)}</strong></div>`:''}
+    </div>
     <div class="section-head"><h2>Faturas / recibos emitidos</h2></div>
     <div class="table-wrap">
       <table><thead><tr><th>Nº</th><th>Data</th><th>Cliente</th><th>Documento</th><th>Pagamento</th><th>Emitido por</th><th>Total</th><th></th></tr></thead>
@@ -2154,7 +2439,7 @@ RENDERERS.relatorios = function(el){
           <td>${fmtDate(s.date)} ${s.time}</td>
           <td>${s.clientId? clientName(s.clientId) : 'Cliente avulso'}</td>
           <td>${s.docType||'Fatura-Recibo'}</td>
-          <td>${s.paymentMethod}</td>
+          <td>${saleMethodLabel(s)}</td>
           <td>${s.issuedBy||'—'}</td>
           <td><strong>${fmt(s.total)}</strong></td>
           <td style="white-space:nowrap;">
@@ -2315,11 +2600,14 @@ function saveEditedSale(){
     DB.stockMovements.push({id:uid(), productId:p.id, type: delta>0?'saida':'entrada', qty:Math.abs(delta), reason:'Correção da venda Nº '+String(sale.invoice).padStart(5,'0'), date:today()});
   });
 
-  const installments = buildInstallments(paymentMethod, total);
+  const depositApplied = Math.min(sale.depositApplied||0, total);
+  const collectible = Math.max(0, total - depositApplied);
+  const installments = buildInstallments(paymentMethod, collectible);
+  const payments = collectible>0 ? [{method:paymentMethod, amount:collectible}] : [];
 
   Object.assign(sale, {
-    clientId, items: editCart.map(i=>({...i})), subtotal: editCartTotal(), discount, total,
-    paymentMethod, installments, professionalId: professionalId||null,
+    clientId, items: editCart.map(i=>({...i})), subtotal: editCartTotal(), discount, total, depositApplied,
+    payments, paymentMethod, installments, professionalId: professionalId||null,
     editedBy: session? session.name : '', editedAt: new Date().toISOString(),
   });
 
@@ -2336,7 +2624,7 @@ function printRelatorio(){
   const serviceRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='service').reduce((x,i)=>x+i.price*i.qty,0),0);
   const productRevenue = sales.reduce((a,s)=>a+s.items.filter(i=>i.type==='product').reduce((x,i)=>x+i.price*i.qty,0),0);
   const byMethod = {}; PAY_METHODS.forEach(m=>byMethod[m]=0);
-  sales.forEach(s=>byMethod[s.paymentMethod]=(byMethod[s.paymentMethod]||0)+s.total);
+  sales.forEach(s=> salePayments(s).forEach(p=>{ byMethod[p.method] = (byMethod[p.method]||0) + p.amount; }));
   const itemCounts = {};
   sales.forEach(s=>s.items.forEach(i=>{ itemCounts[i.name]=(itemCounts[i.name]||0)+i.qty*i.price; }));
   const topItems = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
@@ -2457,39 +2745,47 @@ RENDERERS.contabilidade = function(el){
   else if(contabTab==='pettycash') renderPettyCash(body);
   else renderDespesas(body, monthExpenses);
 };
+function pettyCashBalanceByForm(){
+  const bal = {}; PETTY_FORMS.forEach(f=>bal[f]=0);
+  (DB.pettyCash.fundEntries||[]).forEach(f=>{ bal[f.form||'Numerário'] = (bal[f.form||'Numerário']||0) + f.amount; });
+  DB.expenses.forEach(e=>{
+    const {origin, form} = parseExpenseSource(e.paymentSource);
+    if(origin==='Petty Cash') bal[form] = (bal[form]||0) - e.amount;
+  });
+  return bal;
+}
 function pettyCashBalance(){
-  const injected = (DB.pettyCash.fundEntries||[]).reduce((a,f)=>a+f.amount,0);
-  const spent = DB.expenses.filter(e=>e.paymentSource==='Petty Cash').reduce((a,e)=>a+e.amount,0);
-  return injected - spent;
+  const byForm = pettyCashBalanceByForm();
+  return Object.values(byForm).reduce((a,v)=>a+v,0);
 }
 function renderPettyCash(el){
   const entries = [...(DB.pettyCash.fundEntries||[])].sort((a,b)=>b.date.localeCompare(a.date));
-  const spentList = DB.expenses.filter(e=>e.paymentSource==='Petty Cash').sort((a,b)=>b.date.localeCompare(a.date));
-  const balance = pettyCashBalance();
+  const spentList = DB.expenses.filter(e=>parseExpenseSource(e.paymentSource).origin==='Petty Cash').sort((a,b)=>b.date.localeCompare(a.date));
+  const byForm = pettyCashBalanceByForm();
+  const total = pettyCashBalance();
   el.innerHTML = `
     <div class="grid-kpi">
-      <div class="kpi-card"><div class="label">Saldo atual do Petty Cash</div><div class="value" style="color:${balance<0?'var(--bad)':'var(--ink)'}">${fmt(balance)}</div></div>
-      <div class="kpi-card"><div class="label">Total injetado</div><div class="value">${fmt(entries.reduce((a,f)=>a+f.amount,0))}</div></div>
-      <div class="kpi-card"><div class="label">Total gasto</div><div class="value">${fmt(spentList.reduce((a,e)=>a+e.amount,0))}</div></div>
+      <div class="kpi-card"><div class="label">Saldo total do Petty Cash</div><div class="value" style="color:${total<0?'var(--bad)':'var(--ink)'}">${fmt(total)}</div></div>
+      ${PETTY_FORMS.map(f=>`<div class="kpi-card"><div class="label">${f}</div><div class="value" style="font-size:19px;color:${byForm[f]<0?'var(--bad)':'var(--ink)'}">${fmt(byForm[f])}</div></div>`).join('')}
     </div>
     <div class="section-head"><h3 style="margin:0;font-size:14px;">Fontes do Petty Cash</h3><div class="actions"><button class="btn btn-bronze" onclick="openPettyFundModal()">${ic('plus',14)} Adicionar fundo</button></div></div>
     <div class="table-wrap" style="margin-bottom:22px;">
-      <table><thead><tr><th>Data</th><th>Fonte</th><th>Valor</th><th>Notas</th><th></th></tr></thead>
+      <table><thead><tr><th>Data</th><th>Fonte</th><th>Forma</th><th>Valor</th><th>Notas</th><th></th></tr></thead>
       <tbody>
         ${entries.map(f=>`<tr>
-          <td>${fmtDate(f.date)}</td><td>${f.source}</td><td><strong>${fmt(f.amount)}</strong></td><td>${f.notes||'—'}</td>
+          <td>${fmtDate(f.date)}</td><td>${f.source}</td><td>${f.form||'Numerário'}</td><td><strong>${fmt(f.amount)}</strong></td><td>${f.notes||'—'}</td>
           <td><button class="btn btn-sm btn-danger" onclick="deletePettyFund('${f.id}')">${ic('trash',13)}</button></td>
-        </tr>`).join('') || `<tr class="empty-row"><td colspan="5">Sem fundos registados.</td></tr>`}
+        </tr>`).join('') || `<tr class="empty-row"><td colspan="6">Sem fundos registados.</td></tr>`}
       </tbody></table>
     </div>
     <h3 style="font-size:14px;margin-bottom:10px;">Despesas pagas com Petty Cash</h3>
     <div class="table-wrap">
-      <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Valor</th></tr></thead>
+      <table><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Forma</th><th>Valor</th></tr></thead>
       <tbody>
-        ${spentList.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.description}</td><td>${e.category}</td><td><strong>${fmt(e.amount)}</strong></td></tr>`).join('') || `<tr class="empty-row"><td colspan="4">Sem despesas pagas com Petty Cash.</td></tr>`}
+        ${spentList.map(e=>`<tr><td>${fmtDate(e.date)}</td><td>${e.description}</td><td>${e.category}</td><td>${parseExpenseSource(e.paymentSource).form}</td><td><strong>${fmt(e.amount)}</strong></td></tr>`).join('') || `<tr class="empty-row"><td colspan="5">Sem despesas pagas com Petty Cash.</td></tr>`}
       </tbody></table>
     </div>
-    <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">Para pagar uma despesa com o Petty Cash, registe-a em "Despesas / Compras" e escolha "Petty Cash" como forma de pagamento.</p>
+    <p style="font-size:11px;color:var(--ink-soft);margin-top:12px;">Para pagar uma despesa com o Petty Cash, registe-a em "Despesas / Compras" e escolha uma das opções "Pago com o Petty Cash".</p>
   `;
 }
 function openPettyFundModal(){
@@ -2497,8 +2793,9 @@ function openPettyFundModal(){
     <div class="field"><label>Fonte do fundo</label><input id="f-pfsource" placeholder="Ex: Retirado do caixa principal / Injeção da proprietária"></div>
     <div class="field-row cols-2">
       <div class="field"><label>Valor (MT)</label><input type="number" id="f-pfamount" value="0"></div>
-      <div class="field"><label>Data</label><input type="date" id="f-pfdate" value="${today()}"></div>
+      <div class="field"><label>Forma</label><select id="f-pfform">${PETTY_FORMS.map(f=>`<option>${f}</option>`).join('')}</select></div>
     </div>
+    <div class="field"><label>Data</label><input type="date" id="f-pfdate" value="${today()}"></div>
     <div class="field"><label>Notas (opcional)</label><input id="f-pfnotes"></div>
   `, `<button class="btn" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePettyFund()">Guardar</button>`);
 }
@@ -2507,7 +2804,7 @@ function savePettyFund(){
   const amount = Number(document.getElementById('f-pfamount').value)||0;
   if(!source){ toast('Indique a fonte do fundo.','bad'); return; }
   if(amount<=0){ toast('Indique um valor válido.','bad'); return; }
-  DB.pettyCash.fundEntries.push({id:uid(), source, amount, date:document.getElementById('f-pfdate').value||today(), notes:document.getElementById('f-pfnotes').value.trim()});
+  DB.pettyCash.fundEntries.push({id:uid(), source, amount, form:document.getElementById('f-pfform').value, date:document.getElementById('f-pfdate').value||today(), notes:document.getElementById('f-pfnotes').value.trim()});
   save(); closeModal(); toast('Fundo adicionado ao Petty Cash.'); navigate('contabilidade');
 }
 function deletePettyFund(id){
@@ -2568,7 +2865,7 @@ function computeBalancete(monthSales, monthExpenses){
   const comissoes = monthSales.reduce((a,s)=>{ if(!s.professionalId) return a; const prof=DB.professionals.find(p=>p.id===s.professionalId); return a+(prof? s.total*prof.commissionRate/100 : 0); },0);
   const despesasGerais = monthExpenses.reduce((a,e)=>a+e.amount,0);
   const disponibilidades = {}; PAY_METHODS.forEach(m=>disponibilidades[m]=0);
-  monthSales.forEach(s=>disponibilidades[s.paymentMethod]=(disponibilidades[s.paymentMethod]||0)+s.total);
+  monthSales.forEach(s=> salePayments(s).forEach(p=>{ disponibilidades[p.method] = (disponibilidades[p.method]||0) + p.amount; }));
   const valorInventario = DB.products.reduce((a,p)=>a+p.cost*p.stock,0);
   const debitos = [
     ['Custo das Mercadorias Vendidas (CMV)', cmv],
@@ -2765,10 +3062,10 @@ function openExpenseModal(id){
       <div class="field"><label>Data</label><input type="date" id="f-edate" value="${e?e.date:today()}"></div>
     </div>
     <div class="field"><label>Valor total (MT)</label><input type="number" id="f-eamount" value="${e?e.amount:0}"></div>
-    <div class="field"><label>Pago com</label><select id="f-esource">${EXPENSE_SOURCES.map(s=>`<option ${(e?e.paymentSource:'Numerário (Caixa)')===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="field"><label>Pago com</label><select id="f-esource">${expenseSourceOptionsHTML(e?e.paymentSource:'Caixa (Numerário)')}</select></div>
     <p style="font-size:11px;color:var(--ink-soft);margin:-8px 0 13px;">
-      ${openSession? `Caixa atual aberto — numerário esperado é reduzido automaticamente se escolher "Numerário (Caixa)".` : `Não há caixa aberto no momento — se escolher "Numerário (Caixa)", a despesa fica registada mas sem ligação a uma sessão.`}
-      Saldo atual do Petty Cash: <strong>${fmt(pettyBalance)}</strong>.
+      ${openSession? `Caixa atual aberto — o canal escolhido (Numerário, M-Pesa, E-Mola ou Transferência) é reduzido automaticamente nessa sessão.` : `Não há caixa aberto no momento — se escolher uma opção "Caixa", a despesa fica registada mas sem ligação a uma sessão específica.`}
+      Saldo atual do Petty Cash (todas as formas): <strong>${fmt(pettyBalance)}</strong>.
     </p>
     <div class="field"><label><input type="checkbox" id="f-ehasvat" ${e&&e.hasVat?'checked':''} onchange="document.getElementById('f-evatwrap').style.display=this.checked?'block':'none'"> Despesa com IVA dedutível</label></div>
     <div class="field" id="f-evatwrap" style="display:${e&&e.hasVat?'block':'none'};"><label>Valor do IVA incluído</label><input type="number" id="f-evat" value="${e?e.vatAmount:0}"></div>
@@ -2787,7 +3084,7 @@ function saveExpense(id){
   const data = {
     description, category:document.getElementById('f-ecat').value, date:document.getElementById('f-edate').value,
     amount:Number(document.getElementById('f-eamount').value)||0, hasVat, vatAmount: hasVat? Number(document.getElementById('f-evat').value)||0 : 0,
-    paymentSource, cashSessionId: paymentSource==='Numerário (Caixa)' && openSession ? openSession.id : null,
+    paymentSource, cashSessionId: parseExpenseSource(paymentSource).origin==='Caixa' && openSession ? openSession.id : null,
   };
   if(id){ Object.assign(DB.expenses.find(e=>e.id===id), data); toast('Despesa atualizada.'); }
   else { DB.expenses.push({id:uid(), ...data}); toast('Despesa registada.'); }
